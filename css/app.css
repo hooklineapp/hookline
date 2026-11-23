@@ -394,7 +394,7 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 .look { display: grid; gap: 12px; padding: 4px 16px 14px; }
 .look-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .look-row > span { font-size: 14px; }
-.designs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.designs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .design { padding: 8px !important; border-radius: 14px !important; display: grid; gap: 6px; justify-items: center; font-size: 12px; font-weight: 650; background: var(--bg) !important; border: 2px solid transparent !important; box-shadow: none !important; }
 .design.on { border-color: var(--acc) !important; }
 .design .pv { width: 100%; aspect-ratio: 1 / .8; border-radius: 10px; background: #eceef4; position: relative; overflow: hidden; }
@@ -408,3 +408,38 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 .accents { display: flex; gap: 10px; flex-wrap: wrap; }
 .accent { width: 34px; height: 34px; padding: 0 !important; border-radius: 50% !important; border: 3px solid var(--card) !important; box-shadow: 0 0 0 1px var(--line) !important; }
 .accent.on { box-shadow: 0 0 0 2.5px var(--ink) !important; }
+
+/* ---------- Design: Pin (weiß, schwarze Kontur, zwei rote Querstreifen wie die Figur) ---------- */
+:root[data-style="pin"] {
+  --bg: #ffffff; --bg2: #f2f2f2; --card: #ffffff; --ink: #111111; --ink2: #2b2b2b; --mute: #6b6b6b; --line: #e6e6e6;
+  --acc: #e3202f; --acc2: #b91c1c; --acc-soft: #fdeaec; --grad: #e3202f;
+  --r: 18px; --sh: none; --sh-lg: 0 10px 34px rgba(0, 0, 0, .14);
+  --glass: #ffffff; --panel: #ffffff; --bar: #ffffff;
+}
+:root[data-style="pin"][data-theme="dark"] {
+  --bg: #121212; --bg2: #1e1e1e; --card: #181818; --ink: #f5f5f5; --ink2: #d8d8d8; --mute: #9a9a9a; --line: #2c2c2c;
+  --acc: #ff3b47; --acc-soft: rgba(255, 59, 71, .14); --grad: #ff3b47; --glass: #181818; --panel: #181818; --bar: #181818;
+}
+:root[data-style="pin"] * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-style="pin"] .card, :root[data-style="pin"] .item, :root[data-style="pin"] .tile, :root[data-style="pin"] details.grp,
+:root[data-style="pin"] .score, :root[data-style="pin"] .replay, :root[data-style="pin"] .chip, :root[data-style="pin"] .avatar,
+:root[data-style="pin"] .dock, :root[data-style="pin"] .calpanel, :root[data-style="pin"] .shotcard, :root[data-style="pin"] .welcome-card { border: 2.5px solid var(--ink); box-shadow: none; }
+:root[data-style="pin"] .tile:first-child { background: var(--card); color: var(--ink); }
+:root[data-style="pin"] .tile:first-child small { color: var(--mute); }
+:root[data-style="pin"] .tile:first-child b { color: var(--acc); }
+:root[data-style="pin"] .fab { background: var(--acc); box-shadow: none; border: 2.5px solid var(--ink); }
+:root[data-style="pin"] .pillbtn.primary, :root[data-style="pin"] button.primary { background: var(--acc); box-shadow: none; }
+:root[data-style="pin"] #tabs button.active { background: transparent; color: var(--acc); }
+/* Streifen 1: zwei rote Querstreifen über der unteren Leiste */
+:root[data-style="pin"] #tabs { border-top: 0; position: relative; padding-top: 16px; }
+:root[data-style="pin"] #tabs::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 11px;
+  background: linear-gradient(var(--acc) 0 4px, transparent 4px 7px, var(--acc) 7px 11px); }
+/* Streifen 2: zwei kurze rote Querstreifen unter den Seitentiteln */
+:root[data-style="pin"] .view h2 { position: relative; padding-bottom: 14px; }
+:root[data-style="pin"] .view h2::after { content: ''; position: absolute; left: 0; bottom: 0; width: 56px; height: 9px;
+  background: linear-gradient(var(--acc) 0 3px, transparent 3px 6px, var(--acc) 6px 9px); }
+:root[data-style="pin"] .pv.pin i, :root[data-style="pin"] .pv.pin u { }
+.pv.pin { background: #fff !important; border: 1.5px solid #111; }
+.pv.pin i { border-radius: 8px; border: 2px solid #111; } .pv.pin u { border-radius: 4px; border: 2px solid #111; } .pv.pin b { border-radius: 50%; background: #e3202f; }
+.pv.pin::before { content: ''; position: absolute; left: 0; right: 0; top: 46%; height: 9px; background: linear-gradient(#e3202f 0 3px, transparent 3px 6px, #e3202f 6px 9px); }
+:root[data-style="pin"] .welcome-card h2::after { left: 50%; transform: translateX(-50%); }

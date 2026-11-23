@@ -7,8 +7,9 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.6.0';
+window.BT_VERSION = '1.7.0';
 S.loadSettings();
+{ const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac) S.set('accent', ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
 // Design: Glas/Flat und Hell/Dunkel/Automatisch
 const mqDark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;

@@ -7,7 +7,7 @@ export const SCHEMA = [
   // Allgemein
   S('lang', 'select', 'auto', { group: 'general', options: ['auto', 'de', 'en'], basic: true }),
   S('theme', 'select', 'auto', { group: 'general', options: ['auto', 'light', 'dark'], basic: true, look: true }),
-  S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat', 'soft', 'sport'], basic: true, look: true }),
+  S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat', 'soft', 'sport', 'pin'], basic: true, look: true }),
   S('accent', 'select', 'indigo', { group: 'general', options: ['indigo', 'ocean', 'lane', 'mint', 'cherry', 'mono'], basic: true, look: true }),
   S('expertMode', 'bool', false, { group: 'general', hidden: true }),
   S('mascot', 'bool', true, { group: 'general', basic: true }),
