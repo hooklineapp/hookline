@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.8.5';
+window.BT_VERSION = '1.8.6';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac && /^[0-9a-f]{6}$/i.test(ac)) S.set('accentColor', '#' + ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
@@ -73,7 +73,7 @@ document.addEventListener('visibilitychange', () => {
 })();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !/[?&]nosw/.test(location.search)) {
-  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { });
+  navigator.serviceWorker.register('sw.js?v=' + window.BT_VERSION, { updateViaCache: 'none' }).catch(() => { });
 }
 // leise prüfen, ob es eine neuere Fassung gibt -> nur ein kleiner Punkt am Optionen-Tab
 setTimeout(async () => {

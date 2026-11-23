@@ -122,7 +122,7 @@ function aboutCard() {
     if (!u.available) { status.textContent = t('u.current'); return; }
     status.textContent = t('u.available', { v: u.latest });
     btn.textContent = t('u.install'); btn.classList.add('primary');
-    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); await applyUpdate(); };
+    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); await applyUpdate(u.latest); };
   } }, t('u.check'));
   const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
   return h('details.grp', { open: hasUpd }, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),

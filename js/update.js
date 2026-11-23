@@ -1,4 +1,5 @@
 // Gezielte Aktualisierung: prüfen, ob auf dem Server eine neuere Fassung liegt, und sie auf Wunsch übernehmen.
+// Alle Abrufe tragen die Versionsnummer im Namen, damit kein Zwischenspeicher (Browser oder CDN) Altes liefert.
 const cmp = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
 
 export async function checkUpdate() {
@@ -11,24 +12,33 @@ export async function checkUpdate() {
   }
 }
 
-export async function applyUpdate() {
-  const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
-  const reload = () => location.reload();
-  if (!reg) { reload(); return; }
-  navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
-  try { await reg.update(); } catch { /* offline */ }
-  // auf die neue, fertig geladene Fassung warten (höchstens 20 s)
-  const waitInstalled = () => new Promise((res) => {
-    if (reg.waiting) return res(reg.waiting);
-    const sw = reg.installing;
-    if (!sw) return res(null);
-    sw.addEventListener('statechange', () => { if (sw.state === 'installed') res(reg.waiting || sw); if (sw.state === 'redundant') res(null); });
-    setTimeout(() => res(reg.waiting || null), 20000);
+async function hardReload() {
+  for (const k of await caches.keys()) await caches.delete(k);
+  location.replace(location.pathname + '?u=' + Date.now() + location.hash);
+}
+
+export async function applyUpdate(latest) {
+  if (!('serviceWorker' in navigator)) { await hardReload(); return; }
+  let done = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!done) { done = true; location.reload(); } }, { once: true });
+  let reg;
+  try {
+    // neuen Service Worker mit Versionsnummer registrieren -> wird garantiert frisch geladen
+    reg = await navigator.serviceWorker.register('sw.js?v=' + (latest || Date.now()), { updateViaCache: 'none' });
+  } catch { await hardReload(); return; }
+  const w = await new Promise((res) => {
+    const check = () => {
+      if (reg.waiting) return res(reg.waiting);
+      const sw = reg.installing;
+      if (!sw) return false;
+      sw.addEventListener('statechange', () => { if (sw.state === 'installed') res(reg.waiting || sw); if (sw.state === 'redundant') res(null); });
+      return true;
+    };
+    if (!check()) reg.addEventListener('updatefound', check, { once: true });
+    setTimeout(() => res(reg.waiting || null), 25000);
   });
-  const w = await waitInstalled();
   if (w) w.postMessage('skipWaiting');
-  else { // kein neuer Service Worker gefunden: Speicher leeren und frisch laden
-    for (const k of await caches.keys()) await caches.delete(k);
-    reload();
-  }
+  else await hardReload();
+  // falls der Wechsel nicht automatisch neu lädt
+  setTimeout(() => { if (!done) { done = true; hardReload(); } }, 4000);
 }
