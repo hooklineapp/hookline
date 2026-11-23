@@ -40,7 +40,7 @@ export function initLive(el) {
   const top = h('div.topbar', null, h('div.tb-left', null, statusPill, hud), framePill, bowlerPill);
   const dbtn = (id, ic, label, on) => h('button.dbtn', { id, onclick: on, 'aria-label': label }, icon(ic), h('span', null, label));
   dock = h('div.dock', null,
-    dbtn('b-cal', 'corners', t('btn.setup'), () => startWizard()),
+    dbtn('b-cal', 'corners', t('btn.setup'), () => startCalib()),
     dbtn('b-ball', 'ball', t('btn.ball'), () => mode === 'ball' ? endMode() : startBall()),
     h('button.fab', { id: 'b-run', onclick: togglePause, 'aria-label': t('btn.pause') }, icon('pause')),
     dbtn('b-game', 'plus', t('btn.newGame'), async () => { await newGame(); syncPins(); updateTop(); toast(t('btn.newGame')); }),
@@ -103,7 +103,7 @@ async function startCam() {
     proc.attach(video, cam.track);
     if (corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
-    if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startWizard();
+    if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startCalib();
   } catch (e) {
     const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
     hint.style.display = 'grid'; hint.firstChild.innerHTML = '';
@@ -185,7 +185,7 @@ async function runAuto(target) {
   const r = await proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
   calPanel.classList.remove('busy');
   pickLane = false;
-  if (r.corners) { corners = r.corners; buzz(); toast(t('cal.autoOk'), 'ok'); }
+  if (r.corners) { corners = orderCorners(r.corners); buzz(); toast(t('cal.autoOk'), 'ok'); }
   else toast(t('cal.autoFail'), 'bad');
   placeHandles(); calbar(true); requestDraw();
 }
@@ -236,11 +236,20 @@ function showLoupe(x, y) {
 }
 async function finishCalib() {
   if (corners.length !== 4) { toast(t('cal.hint', { p: '4' })); return; }
-  localStorage.setItem(CAL_KEY, JSON.stringify(corners));
+  corners = orderCorners(corners);
+  if (!fileMode) localStorage.setItem(CAL_KEY, JSON.stringify(corners));
   await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
   calBackup = null; pickLane = false;
   endMode();
   if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = 0; await new Promise(r => { video.onseeked = r; }); runFile(f); }
+}
+// Ecken in die feste Reihenfolge bringen: Foul-Linie (unten im Bild) links/rechts, dann Kopfpins links/rechts.
+// Verhindert eine über Kreuz eingemessene Bahn, wenn die Ecken in anderer Reihenfolge getippt wurden.
+function orderCorners(c) {
+  if (!c || c.length !== 4) return c;
+  const s = c.map(p => [...p]).sort((a, b) => b[1] - a[1]);
+  const foul = s.slice(0, 2).sort((a, b) => a[0] - b[0]), top = s.slice(2).sort((a, b) => a[0] - b[0]);
+  return [foul[0], foul[1], top[0], top[1]];
 }
 async function calibrateNow(bmp) {
   bmp = bmp || await grabFrame();
@@ -248,7 +257,7 @@ async function calibrateNow(bmp) {
   const r = await proc.request(bmp, { calibrate: corners });
   if (r.type === 'calibrated') {
     calibrated = true; toast(t('cal.ok', { n: r.info.features }) + (r.info.snapped ? ' · ' + t('cal.snapped') : ''), 'ok');
-    if (r.info.corners) { corners = r.info.corners.map(c => [...c]); try { localStorage.setItem(CAL_KEY, JSON.stringify(corners)); } catch { /* */ } } setStatus('st.idle', 'ok'); syncPins();
+    if (r.info.corners) { corners = r.info.corners.map(c => [...c]); if (!fileMode) try { localStorage.setItem(CAL_KEY, JSON.stringify(corners)); } catch { /* */ } } setStatus('st.idle', 'ok'); syncPins();
   } else toast(r.message || 'Fehler', 'bad');
 }
 
@@ -511,6 +520,7 @@ async function handleEvent(ev) {
     buzz(60); beep(990, 0.12);
     if (!S.get('autoSave') && !confirm(t('btn.save') + '?')) return;
     const shot = await addShot(ev.shot, { source: fileMode ? 'file' : 'camera' });
+    if (fileMode) fileShots++;
     if (!shot.pinsAfter || S.get('confirmShots')) {
       const v = await pinPadSheet(shot.pinsBefore, shot.pinsAfter ?? shot.pinsBefore, shot.pinDetail);
       if (v) { shot.pinsAfter = v; shot.pinsManual = true; await updateShot(shot); }
@@ -584,17 +594,18 @@ function togglePause() {
   paused = !paused;
   proc?.setPaused(paused);
   const b = $('#b-run'); b.innerHTML = ''; b.append(icon(paused ? 'play' : 'pause')); b.classList.toggle('paused', paused);
-  if (fileMode) { fileStop = paused; }
+  if (fileMode) { if (paused) video.pause(); else video.play().catch(() => { }); }
   setStatus(paused ? 'st.paused' : 'st.idle', paused ? '' : 'ok');
 }
 async function moreMenu() {
   const item = (val, ic, label, sub) => ({ value: val, label, icon: ic, sub });
   const v = await sheet(t('btn.more'), null, [], { menu: [
+    ...(fileMode ? [item('closefile', 'close', t('file.close'))] : []),
     item('file', 'video', t('btn.file'), t('file.short')),
     item('game', 'pins', t('h.scorecard')),
     item('fs', 'expand', t('btn.fullscreen')),
   ] });
-  if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
+  if (v === 'closefile') closeFile(); else if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
 }
 function toggleFullscreen() {
   const d = document;
@@ -608,8 +619,12 @@ function pickFile() {
   inp.onchange = () => { const f = inp.files[0]; if (f) openVideoUrl(URL.createObjectURL(f), new URLSearchParams()); };
   inp.click();
 }
+let camCorners = null, fileShots = 0;
 async function openVideoUrl(url, q) {
-  fileMode = true; fileStop = false;
+  if (!fileMode) camCorners = corners.length === 4 ? corners.map(c => [...c]) : null;
+  fileMode = true; fileStop = true; fileShots = 0;
+  await new Promise(r => setTimeout(r, 50));
+  fileStop = false; calibrated = false; unfreeze();
   proc.stop(); stopStream(cam?.stream); cam = null;
   video.srcObject = null; video.autoplay = false; video.removeAttribute('autoplay'); video.src = url; video.muted = true;
   await new Promise((r, j) => { video.onloadeddata = r; video.onerror = () => j(new Error('Video')); }).catch(e => toast(e.message, 'bad'));
@@ -638,17 +653,47 @@ async function openVideoUrl(url, q) {
       }
     } catch (e) { console.warn('GT', e); }
   }
+  else corners = [];          // jedes Video hat seinen eigenen Blickwinkel: Ecken auf dem ersten Bild neu setzen
   if (q.get('corners')) corners = JSON.parse(q.get('corners'));
   if (corners.length === 4) await calibrateNow();
-  else { pendingFps = fps; S.get('autoWizard') ? startWizard() : await startCalib(); return; }
+  else { pendingFps = fps; toast(t('file.corners')); await startCalib(); return; }
   await runFile(fps);
 }
 async function runFile(fps) {
   fileStop = false;
   window.__fileDone = false;
+  if (paused) togglePause();
+  setStatus('file.running', 'ok');
   await proc.runFile(video, fps, (i, n) => { progress.style.transform = `scaleX(${i / n})`; }, () => fileStop || !active);
+  await new Promise(r => setTimeout(r, 700));   // letzter Wurf (Abschluss am Videoende) kommt etwas später
   window.__fileDone = true;
-  toast(t('file.done'), 'ok');
+  progress.style.transform = 'scaleX(0)';
+  if (fileStop || !fileMode) return;
+  setStatus('file.ended', '');
+  const n = fileShots;
+  const acts = [{ label: t('file.again'), value: 'again' }];
+  if (n) acts.push({ label: t('file.toShots'), value: 'shots' });
+  acts.push({ label: t('file.toCam'), value: 'cam', primary: true });
+  const body = h('div', null, h('p', null, n ? t('file.found', { n }) : t('file.none')),
+    n ? null : h('ul.tips', null, h('li', null, t('file.tip1')), h('li', null, t('file.tip2')), h('li', null, t('file.tip3'))));
+  const v = await sheet(t('file.result'), body, acts);
+  if (v === 'again') { corners = []; calibrated = false; pendingFps = fps; video.currentTime = 0.001; await new Promise(r => { video.onseeked = r; }); await startCalib(); }
+  else if (v === 'shots') { closeFile(); document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'history' })); }
+  else if (v === 'cam') closeFile();
+}
+// Video schließen: zurück zur Kamera mit deren Einrichtung
+async function closeFile() {
+  if (!fileMode) return;
+  fileStop = true; pendingFps = 0;
+  endMode(); unfreeze();
+  video.pause(); video.onended = null; video.removeAttribute('src'); video.load(); video.autoplay = true;
+  fileMode = false; calibrated = false;
+  corners = camCorners || []; camCorners = null;
+  progress.style.transform = 'scaleX(0)';
+  if (paused) togglePause();
+  const q = new URLSearchParams(location.search);
+  if (q.get('video')) history.replaceState(null, '', location.pathname + location.hash);
+  if (active) await startCam();
 }
 
 // ---------- Overlay ----------

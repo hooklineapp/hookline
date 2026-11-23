@@ -171,11 +171,68 @@ export class Processor {
     });
   }
 
-  // --- Videodatei: Bild für Bild (deterministisch, jedes Bild) ---
+  // --- Videodatei ---
+  // Abspielen statt Bild für Bild springen (Springen ist auf Handys sehr langsam: jedes Bild ab dem letzten
+  // Schlüsselbild neu dekodieren). Die Abspielgeschwindigkeit passt sich an: so schnell, wie die Auswertung
+  // mitkommt, ohne Bilder auszulassen. Zeitstempel kommen aus dem Video, daher stimmen Tempo und Zeiten.
+  // Ohne requestVideoFrameCallback (alte Browser): Bild für Bild springen.
   async runFile(video, fps, onProgress, shouldStop) {
     this.stop();
     this.source = 'file';
     const dur = video.duration;
+    if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype) || this.forceSeek) return this._runFileSeek(video, fps, onProgress, shouldStop, dur);
+    video.pause(); video.muted = true;
+    if (video.currentTime > 0.01) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = 0; }); }
+    let rate = 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0;
+    video.playbackRate = rate;
+    await new Promise((resolve) => {
+      const finish = () => {
+        if (done) return; done = true;
+        video.pause(); video.playbackRate = 1;
+        this.post({ type: 'flush', t: Math.max(lastT, dur * 1000) + 50 });
+        resolve();
+      };
+      const run = async (bmp, t) => {
+        busy = true;
+        const res = await this.request(bmp, { t });
+        this._cnt.cam++; this._cnt.proc++; this._cnt.ms += res.ms || 0;
+        this.onResult(res);
+        onProgress?.(t / 1000, dur);
+        busy = false;
+        if (pending) { const p = pending; pending = null; run(p.bmp, p.t); }
+        else if (video.ended || video.currentTime >= dur - 0.001) finish();
+      };
+      const onFrame = async (now, meta) => {
+        if (done) return;
+        if (shouldStop()) { finish(); return; }
+        const t = meta.mediaTime * 1000;
+        if (t <= lastT && seen) { video.requestVideoFrameCallback(onFrame); return; }
+        lastT = t; seen++;
+        let bmp;
+        try { bmp = await createImageBitmap(video); } catch { video.requestVideoFrameCallback(onFrame); return; }
+        if (busy) { if (pending) { pending.bmp.close?.(); dropped++; } pending = { bmp, t }; } else run(bmp, t);
+        // Geschwindigkeit anpassen: Bilder ausgelassen -> langsamer, sonst etwas schneller (max. Echtzeit)
+        const nowMs = performance.now();
+        if (nowMs - lastAdapt > 700) {
+          const r0 = rate;
+          if (dropped > 0) rate = Math.max(0.07, rate * 0.7); else rate = Math.min(1, rate * 1.1);
+          if (rate !== r0) video.playbackRate = rate;
+          dropped = 0; lastAdapt = nowMs;
+        }
+        video.requestVideoFrameCallback(onFrame);
+      };
+      const fallback = () => {             // keine Bilder (z. B. Seite im Hintergrund): Bild für Bild auswerten
+        if (done) return; done = true;
+        video.pause(); video.playbackRate = 1; video.onended = null;
+        resolve(this._runFileSeek(video, fps, onProgress, shouldStop, dur));
+      };
+      video.onended = () => { if (!seen) fallback(); else if (!busy && !pending) finish(); };
+      video.requestVideoFrameCallback(onFrame);
+      video.play().catch(fallback);
+      setTimeout(() => { if (!seen) fallback(); }, 1500);
+    });
+  }
+  async _runFileSeek(video, fps, onProgress, shouldStop, dur) {
     const n = Math.floor(dur * fps);
     video.pause();
     for (let i = 0; i < n; i++) {
@@ -186,7 +243,7 @@ export class Processor {
       const res = await this.request(bmp, { t: i / fps * 1000 });
       this._cnt.cam++; this._cnt.proc++; this._cnt.ms += res.ms || 0;
       this.onResult(res);
-      onProgress?.(i + 1, n);
+      onProgress?.(tt, dur);
     }
     // Videoende: laufenden Wurf abschließen
     this.post({ type: 'flush', t: n / fps * 1000 + 50 });
