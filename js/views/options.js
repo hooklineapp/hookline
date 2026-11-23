@@ -18,13 +18,13 @@ export async function showOptions() {
     h('div.seg', null,
       h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(); } }, t('o.normal')),
       h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(); } }, t('o.expert')))));
-  root.append(lookCard());
   root.append(presetsCard());
   root.append(profilesCard());
   root.append(await bowlersCard());
   for (const g of S.GROUPS) { const el = await groupEl(g, ex); if (el) root.append(el); }
   root.append(await dataCard());
   root.append(aboutCard());
+  root.append(lookCard());
 }
 
 async function bowlersCard() {

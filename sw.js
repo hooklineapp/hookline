@@ -1,5 +1,5 @@
 // Offline: App-Hülle vorab cachen, danach "stale-while-revalidate".
-const V = 'hl-v1.7.1';
+const V = 'hl-v1.7.2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons/icon.svg', 'icons/icon-small.svg', 'icons/icon-32.png', 'icons/icon-192.png',
   'js/main.js', 'js/settings.js', 'js/i18n.js', 'js/db.js', 'js/store.js', 'js/ui.js', 'js/camera.js', 'js/processor.js',
   'js/analysis.js', 'js/scoring.js', 'js/lane.js', 'js/replay.js', 'js/pinsim.js', 'js/mascot.js', 'js/autotune.js',
