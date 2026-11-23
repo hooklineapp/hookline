@@ -2,7 +2,7 @@
 // Reihenfolge: MediaStreamTrackProcessor (jedes Kamerabild, exakte Zeit) -> Track im Worker -> requestVideoFrameCallback -> rAF.
 import { Engine } from './vision/engine.js';
 import { autoLane } from './vision/autolane.js';
-import { snapCorners } from './vision/snap.js';
+import { snapCorners, snapNormalized } from './vision/snap.js';
 import { toGray } from './vision/lk.js';
 
 class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im Worker kann
@@ -31,6 +31,7 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
     let res;
     if (m.calibrate) res = { type: 'calibrated', info: e.calibrate(frame, m.calibrate), w, h };
     else if (m.sample) res = { type: 'color', color: e.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
+    else if (m.snap) res = { type: 'auto', ...snapNormalized(toGray(frame.data, w, h), w, h, m.snap.corners, m.snap.yTop || 18.288) };
     else if (m.auto) {
       const r = autoLane(frame, m.auto.target ? { target: [m.auto.target[0] * w - 0.5, m.auto.target[1] * h - 0.5] } : {});
       if (!r.corners) res = { type: 'auto', error: r.error };

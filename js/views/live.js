@@ -170,6 +170,7 @@ function calbar(show) {
     steps, h('p.cal-msg', null, msg),
     h('div.cal-actions', null,
       h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { pickLane = !pickLane; calbar(true); } }, icon('magic'), t('cal.auto')),
+      n === 4 ? h('button.pillbtn', { onclick: runSnap }, icon('corners'), t('cal.snap')) : null,
       h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; selCorner = -1; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
@@ -180,6 +181,18 @@ function cancelCalib() {
   if (calBackup) corners = calBackup;
   calBackup = null; pickLane = false;
   endMode();
+}
+// grob gesetzte Ecken an die Bahnkanten und die Foul-Linie ziehen (sichtbar, vor dem Übernehmen)
+async function runSnap() {
+  if (corners.length !== 4) return;
+  const src = freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame();
+  if (!src) return;
+  calPanel.classList.add('busy');
+  const r = await proc.request(src, { snap: { corners: orderCorners(corners), yTop: topLineY(S.get('topLine')) } });
+  calPanel.classList.remove('busy');
+  if (r.corners) { corners = r.corners; selCorner = -1; buzz(); toast(t('cal.snapOk'), 'ok'); }
+  else toast(t('cal.snapFail'), 'bad');
+  placeHandles(); calbar(true); requestDraw();
 }
 async function runAuto(target) {
   const src = freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame();

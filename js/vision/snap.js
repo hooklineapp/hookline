@@ -84,7 +84,7 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
   const fp = [];
   for (let k = 1; k < 20; k++) {
     const X = LANE_W * k / 20;
-    const p = apply(H, X, 0), q = apply(H, X, 0.15);
+    const p = apply(H, X, 0), q = apply(H, X, opt.foulM ?? 0.15);
     let dx = q[0] - p[0], dy = q[1] - p[1]; const len = Math.hypot(dx, dy);
     if (len < 1) continue; dx /= len; dy /= len;
     const r = Math.max(2, len);
@@ -103,4 +103,21 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
   const maxMove = opt.maxMove ?? Math.max(6, 0.025 * w);
   if (c.some((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1]) > maxMove)) return null;
   return { corners: c, rms: [sides[0].rms, sides[1].rms] };
+}
+
+// Grob gesetzte Ecken (normalisiert, Reihenfolge FoulL, FoulR, ObenL, ObenR) auf die Bahnkanten ziehen.
+// Zwei Durchgänge, damit auch etwas weiter daneben gesetzte Punkte gefunden werden. Ergebnis normalisiert.
+export function snapNormalized(gray, w, h, corners, yTop) {
+  let img = corners.map(([x, y]) => [x * w - 0.5, y * h - 0.5]);
+  let ok = false;
+  for (let pass = 0; pass < 3; pass++) {
+    // erst breit suchen (grob gesetzt), dann eng verfeinern
+    const r = snapCorners(gray, w, h, img, yTop, { maxMove: Math.max(10, 0.06 * w), searchM: pass === 0 ? 0.2 : 0.08, foulM: pass === 0 ? 0.5 : 0.15 });
+    if (!r) { if (pass === 0) continue; break; }
+    const moved = Math.max(...r.corners.map((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1])));
+    img = r.corners; ok = true;
+    if (moved < 0.5) break;
+  }
+  if (!ok) return { error: 'nosnap' };
+  return { corners: img.map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]) };
 }

@@ -2,7 +2,7 @@
 // skaliert auf Arbeitsauflösung und schneidet den Pin-Bereich in voller Auflösung aus.
 import { Engine } from './engine.js';
 import { autoLane } from './autolane.js';
-import { snapCorners } from './snap.js';
+import { snapCorners, snapNormalized } from './snap.js';
 import { toGray } from './lk.js';
 
 const engine = new Engine();
@@ -54,6 +54,8 @@ function handle(m, src) {
     res = { type: 'calibrated', info: engine.calibrate(frame, m.calibrate), w: frame.width, h: frame.height };
   } else if (m.auto) {
     res = { type: 'auto', ...autoCorners(frame, m.auto) };
+  } else if (m.snap) {
+    res = { type: 'auto', ...snapNormalized(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, m.snap.corners, m.snap.yTop || 18.288) };
   } else if (m.sample) {
     res = { type: 'color', color: engine.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
   } else {

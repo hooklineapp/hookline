@@ -20,7 +20,10 @@ export const ENGINE_DEFAULTS = {
   sizeTolLo: 0.35, sizeTolHi: 2.6, topEdge: true, topEdgeOfs: 0,
   pinsEnabled: true, pinDelay: 1.8, pinWindow: 0.3, pinRatio: 0.5, pinOccluded: 'standing',
   pinZLow: 0.45, pinLumThr: 0, pinRefEvery: 0.5, cropMax: 900,
-  pinTrack: false, pinTrackDur: 1.4, pinTrackLag: 0.015,   // Pin-Verlauf messen (Fallzeit + Richtung je Pin)
+  pinTrack: false, pinTrackDur: 1.4, pinTrackLag: 0.015,
+  // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
+  // Nachbarschaftsvergleich (nbPx) und weiche Kugelfarbe im Lauf sind aus, weil sie saubere Aufnahmen verschlechtern
+  gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
   cooldown: 3.0, debug: false,
 };
 
@@ -216,9 +219,33 @@ export class Engine {
     const useColor = !!bc && o.detMode !== 'motion';
     const cTol = bc ? o.colorTol * Math.max(7, 2.5 * bc.sc) : 0, lTol = bc ? o.lumTol * Math.max(28, 2.5 * bc.sy) : 0;
     let active = 0;
+    // Belichtung und Weißabgleich ausgleichen: Verhältnis aktuelles Bild / Hintergrund je Farbkanal (Median über
+    // eingelernte Zellen). Handys regeln Helligkeit und Farbe ständig nach; ohne Ausgleich wird die ganze Bahn "Bewegung".
+    let gr = 1, ggn = 1, gb = 1;
+    if (o.gainComp && !learning) {
+      const rr = [], rg = [], rb = [];
+      for (let k = (g.frames * 7) % 41; k < n; k += 41) {
+        if (!valid[k] || age[k] < 8 || fg[k]) continue;
+        const b0 = bg[k * 3], b1 = bg[k * 3 + 1], b2 = bg[k * 3 + 2];
+        if (b0 < 25 || b1 < 25 || b2 < 25 || b0 > 245 || b1 > 245 || b2 > 245) continue;
+        rr.push(cur[k * 3] / b0); rg.push(cur[k * 3 + 1] / b1); rb.push(cur[k * 3 + 2] / b2);
+      }
+      const prev = g.gain || [1, 1, 1];
+      if (rr.length > 60) {
+        const med = (a) => { a.sort((x, y) => x - y); return a[a.length >> 1]; };
+        // echte Belichtung ändert sich langsam; große Sprünge sind Verdeckung (Person vor der Kamera)
+        const lim = (m, p0) => Math.min(p0 * 1.03, Math.max(p0 * 0.97, m));
+        gr = lim(med(rr), prev[0]); ggn = lim(med(rg), prev[1]); gb = lim(med(rb), prev[2]);
+      } else [gr, ggn, gb] = prev;
+    }
+    g.gain = [gr, ggn, gb];
+    const ig0 = 1 / gr, ig1 = 1 / ggn, ig2 = 1 / gb;
+    // Nachbarschaftsvergleich: kleine Lagefehler (Wackeln, Rolling Shutter) verschieben Kanten um 1–2 Pixel.
+    // Je Rasterzeile: wie viele Zellen längs entsprechen nbPx Bildpixeln?
+    const nbR = this._nbRows();
     for (let k = 0; k < n; k++) {
       if (!valid[k]) { fg[k] = 0; age[k] = 0; continue; }
-      const r = cur[k * 3], gg = cur[k * 3 + 1], b = cur[k * 3 + 2];
+      const r = cur[k * 3] * ig0, gg = cur[k * 3 + 1] * ig1, b = cur[k * 3 + 2] * ig2;
       if (useColor) {
         const Y = 0.299 * r + 0.587 * gg + 0.114 * b, Cb = -0.1687 * r - 0.3313 * gg + 0.5 * b, Cr = 0.5 * r - 0.4187 * gg - 0.0813 * b;
         col[k] = Math.hypot(Cb - bc.cb, Cr - bc.cr) < cTol && Math.abs(Y - bc.y) < lTol ? 1 : 0;
@@ -228,10 +255,23 @@ export class Engine {
       }
       const d = Math.abs(r - bg[k * 3]) + Math.abs(gg - bg[k * 3 + 1]) + Math.abs(b - bg[k * 3 + 2]);
       const thr = Math.max(o.motionThr, o.devK * dev[k]);
-      const isFg = !learning && age[k] > 4 && d > thr;
+      let isFg = !learning && age[k] > 4 && d > thr, dEff = d;
+      if (isFg && nbR) {
+        // passt der Wert zum Hintergrund einer Nachbarzelle, war es nur eine Verschiebung
+        const i = k % g.nx, j = (k - i) / g.nx, rj = nbR.rj[j], ri = nbR.ri[j];
+        search: for (let dj = -rj; dj <= rj; dj++) {
+          const jj = j + dj; if (jj < 0 || jj >= g.ny) continue;
+          for (let di = -ri; di <= ri; di++) {
+            const ii = i + di; if ((!di && !dj) || ii < 0 || ii >= g.nx) continue;
+            const q = jj * g.nx + ii; if (!valid[q] || age[q] < 5) continue;
+            const dq = Math.abs(r - bg[q * 3]) + Math.abs(gg - bg[q * 3 + 1]) + Math.abs(b - bg[q * 3 + 2]);
+            if (dq <= thr) { isFg = false; dEff = dq; break search; }
+          }
+        }
+      }
       const rate = isFg ? o.fgAbsorb : a;
       bg[k * 3] += rate * (r - bg[k * 3]); bg[k * 3 + 1] += rate * (gg - bg[k * 3 + 1]); bg[k * 3 + 2] += rate * (b - bg[k * 3 + 2]);
-      if (!isFg) dev[k] += a * (d - dev[k]);
+      if (!isFg) dev[k] += a * (dEff - dev[k]);
       if (age[k] < 60000) age[k]++;
       fg[k] = o.detMode === 'color' ? col[k] : (isFg ? 1 : 0);
       active += fg[k];
@@ -250,6 +290,22 @@ export class Engine {
       if (tmp[k]) { fg[k] = 1; fg[k - 1] = 1; fg[k + 1] = 1; fg[k - nx] = 1; fg[k + nx] = 1; }
     }
     return active;
+  }
+
+  // Suchradius je Rasterzeile (in Zellen), der nbPx Bildpixeln entspricht – längs und quer
+  _nbRows() {
+    const o = this.o, g = this.grid;
+    if (!(o.nbPx > 0) || !this.H) return null;
+    if (!g.nbR) g.nbR = { rj: new Uint8Array(g.ny), ri: new Uint8Array(g.ny) };
+    const H = this.H, xc = LANE_W / 2, P = (x, y) => { const w = H[6] * x + H[7] * y + H[8]; return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w]; };
+    for (let j = 0; j < g.ny; j++) {
+      const Y = g.Y0 + (j + 0.5) * g.cy;
+      const a = P(xc, Y), b = P(xc, Y + g.cy), c = P(xc + g.cx, Y);
+      const dy = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      g.nbR.rj[j] = Math.min(o.nbMax, Math.round(o.nbPx / Math.max(1e-3, dy)));
+      g.nbR.ri[j] = Math.min(o.nbMax, Math.max(1, Math.round(o.nbPx / Math.max(1e-3, dx))));
+    }
+    return g.nbR;
   }
 
   _blobs() {
@@ -310,9 +366,10 @@ export class Engine {
       const wOk = width > 2 * BALL_R * o.sizeTolLo && width < 2 * BALL_R * o.sizeTolHi;
       const lOk = len > expL * o.sizeTolLo && len < expL * o.sizeTolHi;
       if (!wOk || !lOk) continue;
-      if (this.ballColor && o.detMode === 'both' && b.colorFrac < o.minColorFrac) continue;
+      // Farbe nur beim Start Pflicht; im Lauf leidet sie unter Unschärfe, Rauschen und Farbstich -> nur Abzug
+      const colorOk = !(this.ballColor && o.detMode === 'both' && b.colorFrac < o.minColorFrac);
       const size = Math.abs(Math.log(width / (2 * BALL_R))) + Math.abs(Math.log(len / expL));
-      out.push({ X, Y, u: b.u, v, size, colorFrac: b.colorFrac, area: b.area });
+      out.push({ X, Y, u: b.u, v, size, colorFrac: b.colorFrac, area: b.area, colorOk });
     }
     return out;
   }
@@ -333,7 +390,7 @@ export class Engine {
   // Startkandidaten sammeln: mehrere Bilder in Folge mit Vorwärtsbewegung
   _seedStep(cands, ts, seed) {
     const o = this.o;
-    const zone = cands.filter(c => c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
+    const zone = cands.filter(c => c.colorOk && c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
     let best = null;
     if (seed.length) {
       const [lt, lx, ly] = seed[seed.length - 1];
@@ -380,7 +437,8 @@ export class Engine {
       for (const c of cands) {
         const ey = Math.abs(c.Y - py), ex = Math.abs(c.X - px);
         if (ey > gy || ex > gx) continue;
-        const sc = ey / gy + ex / gx + c.size * 0.5;
+        if (!c.colorOk && !o.colorSoft) continue;
+        const sc = ey / gy + ex / gx + c.size * 0.5 + (c.colorOk ? 0 : 0.8);
         if (!best || sc < best.sc) best = { c, sc };
       }
       if (!best) {
@@ -685,6 +743,7 @@ export class Engine {
     const pts = detectFeatures(this.pyr[0], o.features);
     if (pts.length < 20) return;
     const Hg = inv(mul(this.T, ref.Href));
+    if (!Hg) return;                       // Lage gerade nicht umkehrbar: altes Schlüsselbild behalten
     const plane = pts.map(([x, y]) => {
       const ww = Hg[6] * x + Hg[7] * y + Hg[8]; if (ww <= 0) return 0;
       const X = (Hg[0] * x + Hg[1] * y + Hg[2]) / ww, Y = (Hg[3] * x + Hg[4] * y + Hg[5]) / ww;
@@ -725,7 +784,7 @@ export class Engine {
       // Schlüsselbild: Merkmale stammen aus key, M bildet Referenzbild -> Schlüsselbild ab
       const key = this.key || (this.key = { pts: ref.pts, plane: ref.plane, tpls: ref.tpls, M: new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) });
       const Mi = inv(key.M);
-      const fit = (pred) => {
+      const fitK = (key, pred) => {
         const res = trackLK(this.pyr, key.tpls, pred, o.lkRadius, o.lkIters, o.lkMaxErr);
         const s = [], d = [];
         res.forEach((r, i) => { if (r) { s.push(key.pts[i]); d.push([r[0], r[1]]); } });
@@ -743,6 +802,7 @@ export class Engine {
         }
         return { ...R, tracked: s.length };
       };
+      const fit = (pred) => fitK(key, pred);
       // Vorhersage mit Bewegung der letzten Bilder (schnelle Schwenks)
       const Tk = mul(this.T, Mi), Tkp = this.Tprev ? mul(this.Tprev, Mi) : Tk;
       let pred = key.pts.map(p => { const a = apply(Tk, p[0], p[1]), b = apply(Tkp, p[0], p[1]); return [a[0] + 0.7 * (a[0] - b[0]), a[1] + 0.7 * (a[1] - b[1])]; });
@@ -762,6 +822,22 @@ export class Engine {
         }
         if (jump < 0.25 * w || this.lost > 3) {
           this.Tprev = this.T; this.T = Tn; this.quality = R.count / key.pts.length; this.lost = 0;
+          // Gegen Drift: auch direkt mit dem Referenzbild der Einrichtung vergleichen. Passt es, dort neu verankern
+          // (Fehler aus der Kette von Schlüsselbildern, z. B. nach einem Ruckler, summieren sich so nicht auf).
+          if (o.refAnchor && key.pts !== ref.pts && this.frameN % o.refAnchorEvery === 0) {
+            const RA = fitK(ref, ref.pts.map(p => apply(this.T, p[0], p[1])));
+            if (RA && RA.plane >= o.planeMin && RA.count >= Math.max(15, ref.pts.length * 0.25)) {
+              const Ha = mul(RA.H, ref.Href), Hc = mul(this.T, ref.Href);
+              let dmax = 0;
+              for (const [X, Y] of [[0, 0], [LANE_W, 0], [0, HEADPIN_Y], [LANE_W, HEADPIN_Y]]) {
+                const a = apply(Ha, X, Y), b = apply(Hc, X, Y); dmax = Math.max(dmax, Math.hypot(a[0] - b[0], a[1] - b[1]));
+              }
+              if (dmax < 0.08 * w) {
+                this.T = RA.H; this.anchored = (this.anchored || 0) + 1;
+                if (RA.count / ref.pts.length >= o.keyQ && this.state !== 'roll') this.key = null;   // Kette neu ab Referenz
+              }
+            }
+          }
           // neues Schlüsselbild, wenn das alte nicht mehr gut passt (Schwenk, Verdeckung, Licht)
           if (o.refRefresh && this.quality < o.keyQ && R.count >= 12 && this.state !== 'roll') this._newKey(w, h);
         } else { ok = false; this.lost++; }
