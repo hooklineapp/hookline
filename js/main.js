@@ -7,9 +7,9 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.8.2';
+window.BT_VERSION = '1.8.3';
 S.loadSettings();
-{ const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac) S.set('accent', ac); if (th) S.set('theme', th); } }
+{ const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac && /^[0-9a-f]{6}$/i.test(ac)) S.set('accentColor', '#' + ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
 // Design: Glas/Flat und Hell/Dunkel/Automatisch
 const mqDark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
@@ -19,12 +19,28 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = dark ? 'dark' : 'light';
   root.dataset.style = S.get('uiStyle') || 'glass';
-  root.dataset.accent = S.get('accent') || 'indigo';
+  // freie Akzentfarbe (außer im Pin-Design, dort ist Rot fest)
+  const hex = /^#[0-9a-f]{6}$/i.test(S.get('accentColor') || '') ? S.get('accentColor') : '#4f46e5';
+  const st = root.style;
+  if ((S.get('uiStyle') || 'glass') === 'pin') { for (const v of ['--acc', '--acc2', '--acc-soft', '--grad']) st.removeProperty(v); }
+  else {
+    const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    const mix = (c, t, k) => Math.round(c + (t - c) * k);
+    const to = (rr, gg, bb) => '#' + [rr, gg, bb].map(x => x.toString(16).padStart(2, '0')).join('');
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const light = to(mix(r, 255, .45), mix(g, 255, .45), mix(b, 255, .45));
+    const acc = dark && lum < 0.45 ? light : hex;
+    st.setProperty('--acc', acc);
+    st.setProperty('--acc2', to(mix(r, 255, .25), mix(g, 255, .25), mix(b, 255, .25)));
+    st.setProperty('--acc-soft', dark ? `rgba(${r},${g},${b},.18)` : to(mix(r, 255, .88), mix(g, 255, .88), mix(b, 255, .88)));
+    st.setProperty('--grad', `linear-gradient(135deg, ${acc} 0%, ${to(mix(r, 255, .3), mix(g, 255, .3), mix(b, 255, .3))} 100%)`);
+    root.dataset.accentDark = lum > 0.72 ? '1' : '';
+  }
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0b0e15' : '#f3f4f8');
 }
 applyTheme();
 mqDark?.addEventListener?.('change', applyTheme);
-S.onChange((k) => { if (k === 'theme' || k === 'uiStyle' || k === 'accent' || k === '*') applyTheme(); });
+S.onChange((k) => { if (k === 'theme' || k === 'uiStyle' || k === 'accentColor' || k === '*') applyTheme(); });
 document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
 
 const views = { live: [showLive, hideLive], history: [showHistory], stats: [showStats], options: [showOptions] };

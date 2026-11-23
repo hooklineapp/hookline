@@ -438,7 +438,7 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 /* zwei breite, flache Schrägstreifen oben im Seitenhintergrund (wie die Streifen der Figur) */
 :root[data-style="pin"] .view:not(#v-live) {
   background:
-    linear-gradient(332deg, transparent 0 236px, var(--acc) 236px 296px, transparent 296px 340px, var(--acc) 340px 400px, transparent 400px) top / 100% 440px no-repeat,
+    linear-gradient(332deg, transparent 0 236px, var(--acc) 236px 296px, transparent 296px 340px, var(--acc) 340px 400px, transparent 400px) top / 100% 440px no-repeat local,
     var(--bg);
 }
 :root[data-style="pin"] .pv.pin i, :root[data-style="pin"] .pv.pin u { }
@@ -499,3 +499,25 @@ details.grp[open] > summary { border-bottom: 1px solid var(--line); }
 #tabs button { position: relative; }
 #tabs button.has-update::after { content: ''; position: absolute; top: 6px; left: calc(50% + 9px); width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px var(--bar); }
 .upd-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); margin-left: 8px; vertical-align: middle; }
+
+/* ---------- Aussehen: Text-Auswahl und Farbknopf ---------- */
+.opt.col { grid-template-columns: 1fr; }
+.choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice button { padding: 7px 13px !important; border-radius: 999px !important; font-size: 13.5px; }
+.choice button.on { background: var(--acc) !important; color: #fff !important; border-color: var(--acc) !important; }
+:root[data-accent-dark="1"] .choice button.on, :root[data-accent-dark="1"] .fab, :root[data-accent-dark="1"] .pillbtn.primary, :root[data-accent-dark="1"] button.primary { color: #111 !important; }
+.colorbtn { display: inline-flex; align-items: center; gap: 8px; }
+.colorbtn .swatch { width: 20px; height: 20px; }
+
+/* ---------- Designs deutlicher unterscheiden ---------- */
+/* Glas: leichter Farbschimmer im Hintergrund */
+:root[data-style="glass"] .view:not(#v-live) { background: radial-gradient(120% 60% at 100% 0%, var(--acc-soft) 0%, transparent 60%) local, var(--bg); }
+/* Flat: Karten mit Akzentkante links, Überschriften klein und gesperrt */
+:root[data-style="flat"] .card, :root[data-style="flat"] details.grp { border-left: 4px solid var(--acc) !important; }
+:root[data-style="flat"] details.grp > summary { text-transform: uppercase; letter-spacing: .06em; font-size: 13px; }
+:root[data-style="flat"] .view:not(#v-live) { background: var(--bg); }
+/* Soft: sanfter Verlauf von oben, sehr runde Formen */
+:root[data-style="soft"] .view:not(#v-live) { background: linear-gradient(180deg, var(--acc-soft) 0%, var(--bg) 360px) local; }
+:root[data-style="soft"] h2 { font-weight: 800; }
+/* Sport: kräftiger Farbbalken oben */
+:root[data-style="sport"] .view:not(#v-live) { background: linear-gradient(var(--acc) 0 6px, var(--bg) 6px) local; }

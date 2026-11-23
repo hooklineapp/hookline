@@ -8,7 +8,7 @@ export const SCHEMA = [
   S('lang', 'select', 'auto', { group: 'general', options: ['auto', 'de', 'en'], basic: true }),
   S('theme', 'select', 'auto', { group: 'general', options: ['auto', 'light', 'dark'], basic: true, look: true }),
   S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat', 'soft', 'sport', 'pin'], basic: true, look: true }),
-  S('accent', 'select', 'indigo', { group: 'general', options: ['indigo', 'ocean', 'lane', 'mint', 'cherry', 'mono'], basic: true, look: true }),
+  S('accentColor', 'color', '#4f46e5', { group: 'general', basic: true, look: true }),
   S('expertMode', 'bool', false, { group: 'general', hidden: true }),
   S('mascot', 'bool', true, { group: 'general', basic: true, look: true }),
   S('preset', 'select', 'recommended', { group: 'general', hidden: true, options: ['recommended', 'handheld', 'tripod', 'battery', 'precise', 'custom'] }),

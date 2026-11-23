@@ -10,7 +10,8 @@ import { icon } from '../ui.js';
 let root;
 export function initOptions(el) { root = el; }
 
-export async function showOptions() {
+export async function showOptions(keepLook) {
+  if (!keepLook) lookOpen = false;
   root.innerHTML = '';
   root.append(h('h2', null, t('o.title')));
   const ex = !!S.get('expertMode');
@@ -172,18 +173,19 @@ function profilesCard() {
         h('button.primary', { onclick: () => { const n = name.value.trim(); if (!n) { name.focus(); return; } S.saveProfile(n); toast(t('o.profileSaved'), 'ok'); showOptions(); } }, t('btn.save')))));
 }
 
-const ACC = { indigo: '#4f46e5', ocean: '#0284c7', lane: '#ea580c', mint: '#059669', cherry: '#e11d48', mono: '#111827' };
 function lookCard() {
-  const th = S.get('theme'), st = S.get('uiStyle'), ac = S.get('accent');
-  const seg = h('div.seg', null, ['auto', 'light', 'dark'].map(v => h('button' + (v === th ? '.on' : ''), { onclick: () => { S.set('theme', v); showOptions(); } }, t('val.' + v))));
-  const designs = h('div.designs', null, ['pin', 'glass', 'flat', 'soft', 'sport'].map(v => h('button.design' + (v === st ? '.on' : ''), { onclick: () => { S.set('uiStyle', v); showOptions(); } },
-    h('span.pv.' + v, null, h('u'), h('i'), h('b')), t('val.' + v))));
-  const accents = h('div.accents', null, Object.entries(ACC).map(([k, c]) => h('button.accent' + (k === ac ? '.on' : ''), { style: { background: c }, title: t('acc.' + k), 'aria-label': t('acc.' + k), onclick: () => { S.set('accent', k); showOptions(); } })));
-  return h('div.card', null, h('b', null, t('o.look')),
-    h('div.look', { style: { padding: '10px 0 0' } },
-      h('div.look-row', null, h('span', null, t('opt.theme')), seg),
-      designs,
-      st === 'pin' ? h('div.look-row', null, h('span', null, t('o.accent')), h('small.muted', null, t('o.pinRed'))) : h('div.look-row', null, h('span', null, t('o.accent')), accents),
-      h('div.look-row', null, h('span', null, t('opt.mascot')),
-        h('label.switch', null, h('input', { type: 'checkbox', checked: S.get('mascot') !== false, onchange: (e) => S.set('mascot', e.target.checked) }), h('i')))));
+  const th = S.get('theme'), st = S.get('uiStyle');
+  const pick = (key, vals, cur, label) => h('div.choice', null, vals.map(v => h('button' + (v === cur ? '.on' : ''), { onclick: () => { S.set(key, v); showOptions(true); } }, label(v))));
+  const color = h('input', { type: 'color', value: S.get('accentColor') || '#4f46e5', style: { position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' },
+    oninput: (e) => S.set('accentColor', e.target.value), onchange: () => showOptions(true) });
+  const colorBtn = h('button.colorbtn', { onclick: () => color.click() }, h('span.swatch', { style: { background: S.get('accentColor') || '#4f46e5' } }), t('o.pickColor'), color);
+  const d = h('details.grp', { open: !!lookOpen, ontoggle: (e) => { lookOpen = e.target.open; } }, h('summary', null, t('o.look')),
+    h('div.opt', null, h('label', null, t('opt.theme')), pick('theme', ['auto', 'light', 'dark'], th, v => t('val.' + v))),
+    h('div.opt.col', null, h('label', null, t('opt.uiStyle')), pick('uiStyle', ['glass', 'flat', 'soft', 'sport', 'pin'], st, v => t('val.' + v)), h('div.hint', null, t('d.' + st))),
+    h('div.opt', null, h('label', null, t('o.accent')), st === 'pin' ? h('small.muted', null, t('o.pinRed')) :
+      h('div.row', null, colorBtn, h('button', { onclick: () => { S.set('accentColor', '#4f46e5'); showOptions(true); } }, t('o.resetGroup')))),
+    h('div.opt', null, h('label', null, t('opt.mascot')),
+      h('label.switch', null, h('input', { type: 'checkbox', checked: S.get('mascot') !== false, onchange: (e) => S.set('mascot', e.target.checked) }), h('i'))));
+  return d;
 }
+let lookOpen = false;
