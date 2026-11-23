@@ -471,3 +471,10 @@ details.grp[open] > summary { border-bottom: 1px solid var(--line); }
 .menuitem { border: 1px solid var(--line); }
 .profile-row button { padding: 7px 12px !important; }
 :root[data-style="flat"] details.grp > summary, :root[data-style="pin"] details.grp > summary { background: var(--bg2); }
+/* Begrüßung: Maskottchen klein am Rand (schaut über die Kartenkante), Text links */
+.welcome-card { position: relative; text-align: left; padding-top: 22px; overflow: visible; }
+.welcome-card h2 { padding-right: 70px; }
+.welcome-card .m-welcome { position: absolute; right: 22px; top: -58px; width: 44px; height: 112px; margin: 0; animation: peek 3.2s ease-in-out infinite; }
+@keyframes peek { 0%, 100% { transform: translateY(0) rotate(4deg); } 50% { transform: translateY(-4px) rotate(-2deg); } }
+.welcome { padding-top: 70px; }
+:root[data-style="pin"] .welcome-card li { background: var(--bg2); }
