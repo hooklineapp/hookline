@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.1.2';
+window.BT_VERSION = '1.1.3';
 S.loadSettings();
 setLang(S.get('lang'));
 document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
