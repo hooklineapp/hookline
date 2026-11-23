@@ -432,14 +432,20 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 :root[data-style="pin"] #tabs button.active { background: transparent; color: var(--acc); }
 /* Streifen 1: zwei rote Querstreifen über der unteren Leiste */
 :root[data-style="pin"] #tabs { border-top: 0; position: relative; padding-top: 16px; }
-:root[data-style="pin"] #tabs::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 11px;
-  background: linear-gradient(var(--acc) 0 4px, transparent 4px 7px, var(--acc) 7px 11px); }
+:root[data-style="pin"] #tabs { padding-top: 12px; }
+:root[data-style="pin"] #tabs::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--acc); }
 /* Streifen 2: zwei kurze rote Querstreifen unter den Seitentiteln */
-:root[data-style="pin"] .view h2 { position: relative; padding-bottom: 14px; }
-:root[data-style="pin"] .view h2::after { content: ''; position: absolute; left: 0; bottom: 0; width: 56px; height: 9px;
-  background: linear-gradient(var(--acc) 0 3px, transparent 3px 6px, var(--acc) 6px 9px); }
+/* zwei breite, flache Schrägstreifen oben im Seitenhintergrund (wie die Streifen der Figur) */
+:root[data-style="pin"] .view:not(#v-live) {
+  background:
+    linear-gradient(332deg, transparent 0 236px, var(--acc) 236px 296px, transparent 296px 340px, var(--acc) 340px 400px, transparent 400px) top / 100% 440px no-repeat,
+    var(--bg);
+}
 :root[data-style="pin"] .pv.pin i, :root[data-style="pin"] .pv.pin u { }
 .pv.pin { background: #fff !important; border: 1.5px solid #111; }
 .pv.pin i { border-radius: 8px; border: 2px solid #111; } .pv.pin u { border-radius: 4px; border: 2px solid #111; } .pv.pin b { border-radius: 50%; background: #e3202f; }
-.pv.pin::before { content: ''; position: absolute; left: 0; right: 0; top: 46%; height: 9px; background: linear-gradient(#e3202f 0 3px, transparent 3px 6px, #e3202f 6px 9px); }
-:root[data-style="pin"] .welcome-card h2::after { left: 50%; transform: translateX(-50%); }
+.pv.pin::before { content: ''; position: absolute; inset: 0; background: linear-gradient(332deg, transparent 0 34%, #e3202f 34% 44%, transparent 44% 52%, #e3202f 52% 62%, transparent 62%); }
+.pv.pin::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #e3202f; }
+/* Texte über den Streifen bekommen eine weiße Aussparung, damit sie lesbar bleiben */
+:root[data-style="pin"] .view > h2 { width: fit-content; margin-left: max(0px, calc(50% - 430px)); background: var(--bg); padding: 0 10px 2px 0; border-radius: 0 8px 8px 0; }
+:root[data-style="pin"] .mode-switch small { background: var(--bg); padding: 4px 8px 4px 0; border-radius: 0 8px 8px 0; flex: 0 1 auto; }
