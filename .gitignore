@@ -1,0 +1,11 @@
+# Nur die App selbst wird veröffentlicht. Alles zum lokalen Testen/Entwickeln bleibt hier.
+zugangsdaten.txt
+*.env
+.env*
+node_modules/
+
+# Tests, Testvideos, Blender-Szenen
+test/
+tools/
+.claude/
+package.json

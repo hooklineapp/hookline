@@ -1,0 +1,125 @@
+// Optionen: alle Einstellungen aus dem Schema, Spieler, Daten, Info.
+import { h, toast, confirmBox, sheet } from '../ui.js';
+import { t, has, setLang } from '../i18n.js';
+import * as S from '../settings.js';
+import * as db from '../db.js';
+import { state, setBowler, saveBowler, deleteBowler, newSession } from '../store.js';
+import { listCameras, scoreCamera } from '../camera.js';
+
+let root;
+export function initOptions(el) { root = el; }
+
+export async function showOptions() {
+  root.innerHTML = '';
+  root.append(h('h2', null, t('o.title')));
+  root.append(await bowlersCard());
+  for (const g of S.GROUPS) root.append(await groupEl(g));
+  root.append(await dataCard());
+  root.append(aboutCard());
+}
+
+async function bowlersCard() {
+  const d = h('details.grp', { open: true }, h('summary', null, t('o.bowlers')));
+  for (const b of state.bowlers) {
+    const c = b.ballColor?.rgb;
+    d.append(h('div.opt', null,
+      h('label', null, h('input', { type: 'radio', name: 'bowler', checked: b.id === state.bowler?.id, onchange: async () => { await setBowler(b.id); const { syncBall, syncPins } = await import('./live.js'); syncBall(); syncPins(); showOptions(); } }),
+        ' ', h('b', null, b.name), ' · ', b.hand === 'L' ? t('o.handL') : t('o.handR'), ' ',
+        c ? h('span.swatch', { style: { background: `rgb(${c})` } }) : h('small.muted', null, t('o.ballColor') + ': ' + t('o.noColor'))),
+      h('button', { onclick: () => editBowler(b) }, t('btn.edit'))));
+  }
+  d.append(h('div.opt', null, h('span'), h('div.row', null,
+    h('button', { onclick: () => editBowler({ id: db.uid(), name: '', hand: 'R', ballColor: null, created: Date.now() }, true) }, '+ ' + t('o.newBowler')),
+    h('button', { onclick: async () => { await newSession(); toast(t('btn.newSession'), 'ok'); } }, t('btn.newSession')))));
+  return d;
+}
+async function editBowler(b, isNew) {
+  const name = h('input.inp', { value: b.name, placeholder: t('o.name') });
+  const hand = h('select.inp', null, h('option', { value: 'R', selected: b.hand !== 'L' }, t('o.handR')), h('option', { value: 'L', selected: b.hand === 'L' }, t('o.handL')));
+  const acts = [{ label: t('btn.cancel'), value: null }];
+  if (!isNew && state.bowlers.length > 1) acts.push({ label: t('btn.delete'), value: 'del', danger: true });
+  if (!isNew && b.ballColor) acts.push({ label: t('o.ballColor') + ' ✕', value: 'clr' });
+  acts.push({ label: t('btn.save'), value: 'ok', primary: true });
+  const v = await sheet(isNew ? t('o.newBowler') : b.name, h('div', null, h('label', null, t('o.name')), name, h('br'), h('label', null, t('o.hand')), hand), acts);
+  if (v === 'ok') { b.name = name.value.trim() || t('bowler.default'); b.hand = hand.value; await saveBowler(b); if (isNew) await setBowler(b.id); }
+  else if (v === 'del' && await confirmBox(b.name + ' ' + t('btn.delete') + '?')) await deleteBowler(b.id);
+  else if (v === 'clr') { b.ballColor = null; await saveBowler(b); }
+  const { syncBall } = await import('./live.js'); syncBall();
+  showOptions();
+}
+
+async function groupEl(g) {
+  const d = h('details.grp', null, h('summary', null, t('g.' + g)));
+  let cams = [];
+  if (g === 'camera') { try { cams = await listCameras(); } catch { /* */ } }
+  for (const s of S.SCHEMA.filter(x => x.group === g)) d.append(control(s, cams));
+  if (g === 'camera' && window.__camInfo) {
+    const i = window.__camInfo;
+    d.append(h('div.opt', null, h('small.muted', null, t('o.camInfo', { info: t('cam.info', { w: i.w, h: i.h, fps: i.fps, label: i.label }) }))));
+  }
+  d.append(h('div.opt', null, h('span'), h('button', { onclick: async () => { if (await confirmBox(t('o.resetGroup') + ': ' + t('g.' + g) + '?', false)) { S.resetAll(g); showOptions(); } } }, t('o.resetGroup'))));
+  return d;
+}
+
+function control(s, cams) {
+  const v = S.get(s.key);
+  const label = h('label', { for: 'o-' + s.key }, t('opt.' + s.key));
+  let ctl;
+  if (s.type === 'bool') {
+    ctl = h('label.switch', null, h('input', { id: 'o-' + s.key, type: 'checkbox', checked: !!v, onchange: (e) => S.set(s.key, e.target.checked) }), h('i'));
+  } else if (s.type === 'select') {
+    ctl = h('select', { id: 'o-' + s.key, onchange: (e) => { S.set(s.key, e.target.value); if (s.key === 'lang') { setLang(e.target.value); location.reload(); } } },
+      s.options.map(o => h('option', { value: o, selected: String(v) === o }, has('val.' + o) ? t('val.' + o) : o)));
+  } else if (s.type === 'range') {
+    const val = h('span.val', null, v);
+    ctl = h('div.row', null, h('input', { id: 'o-' + s.key, type: 'range', min: s.min, max: s.max, step: s.step, value: v,
+      oninput: (e) => { val.textContent = e.target.value; }, onchange: (e) => S.set(s.key, +e.target.value) }), val);
+  } else if (s.type === 'camera') {
+    const ranked = cams.map((c, i) => ({ c, s: scoreCamera(c.label, i) }));
+    ctl = h('select', { id: 'o-' + s.key, onchange: (e) => S.set(s.key, e.target.value) },
+      h('option', { value: '' }, t('val.auto')),
+      ranked.map(({ c }, i) => h('option', { value: c.deviceId, selected: c.deviceId === v }, c.label || ('Kamera ' + (i + 1)))));
+  }
+  const hint = has('opt.' + s.key + '.h') ? h('div.hint', null, t('opt.' + s.key + '.h')) : null;
+  return h('div.opt', null, label, ctl, hint);
+}
+
+async function dataCard() {
+  const shots = await db.list('shots'), sessions = await db.list('sessions');
+  const d = h('details.grp', null, h('summary', null, t('o.data')));
+  d.append(h('div.opt', null, h('span', null, t('o.storage', { n: shots.length, s: sessions.length }))));
+  d.append(h('div.opt', null, h('span', null, t('btn.export') + ' / ' + t('btn.import')), h('div.row', null,
+    h('button', { onclick: exportData }, t('btn.export')),
+    h('button', { onclick: importData }, t('btn.import')))));
+  d.append(h('div.opt', null, h('span', null, t('opt.lang') + ' + ' + t('o.title')), h('div.row', null,
+    h('button', { onclick: () => download('hookline-optionen.json', JSON.stringify(S.exportSettings(), null, 1)) }, t('btn.export')),
+    h('button', { onclick: () => pickJson((o) => { S.importSettings(o); showOptions(); }) }, t('btn.import')))));
+  d.append(h('div.opt', null, h('span'), h('button.danger', { onclick: async () => { if (await confirmBox(t('o.clearConfirm'))) { await db.clearAll(); location.reload(); } } }, t('o.clearAll'))));
+  return d;
+}
+function aboutCard() {
+  return h('details.grp', null, h('summary', null, t('o.about')),
+    h('div.opt', null, h('span', null, t('o.install')), h('span')),
+    h('div.opt', null, h('div.hint', null, t('o.installHint'))),
+    h('div.opt', null, h('span', null, t('misc.version')), h('span.muted', null, window.BT_VERSION || '')));
+}
+function download(name, text) {
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+function pickJson(cb) {
+  const i = h('input', { type: 'file', accept: 'application/json,.json' });
+  i.onchange = async () => { try { cb(JSON.parse(await i.files[0].text())); } catch (e) { toast(String(e.message || e), 'bad'); } };
+  i.click();
+}
+async function exportData() {
+  const data = await db.exportAll();
+  const name = 'hookline-' + new Date().toISOString().slice(0, 10) + '.json';
+  const text = JSON.stringify(data);
+  const file = new File([text], name, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch { /* abgebrochen */ } }
+  download(name, text); toast(t('o.exported'), 'ok');
+}
+function importData() {
+  pickJson(async (o) => { const n = await db.importAll(o); toast(t('o.imported', { n }), 'ok'); location.reload(); });
+}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#f6f7f9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Hookline">
+<meta name="description" content="Bowling-Tracking mit der Handykamera: Laufweg, Tempo, Einlaufwinkel, Pins, Replays.">
+<title>Hookline</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <main id="views">
+    <section id="v-live" class="view active"></section>
+    <section id="v-history" class="view"></section>
+    <section id="v-stats" class="view"></section>
+    <section id="v-options" class="view"></section>
+  </main>
+  <nav id="tabs">
+    <button data-tab="live" class="active"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" class="f"/></svg><span data-i18n="tab.live"></span></button>
+    <button data-tab="history"><svg viewBox="0 0 24 24"><path d="M5 20V4M10 20V9M15 20v-6M20 20V7"/></svg><span data-i18n="tab.history"></span></button>
+    <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/></svg><span data-i18n="tab.stats"></span></button>
+    <button data-tab="options"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span data-i18n="tab.options"></span></button>
+  </nav>
+</div>
+<noscript>Hookline braucht JavaScript.</noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
