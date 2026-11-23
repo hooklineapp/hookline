@@ -19,6 +19,7 @@ export async function listCameras() {
   return d.filter(x => x.kind === 'videoinput');
 }
 
+const MEMO = 'bt.camMemo.v1';
 function resList(pref) {
   const all = [[3840, 2160], [2560, 1440], [1920, 1080], [1280, 720], [960, 540], [640, 480]];
   if (pref === 'auto') return all.slice(2);
@@ -30,7 +31,17 @@ export async function startCamera(video, opt) {
   if (!window.isSecureContext) throw Object.assign(new Error('https'), { code: 'https' });
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('nocam'), { code: 'nocam' });
   let stream;
-  try {
+  // Ergebnis vom letzten Start: direkt mit der richtigen Kamera und Einstellung öffnen. Jedes Umschalten startet
+  // Autofokus/Stabilisator neu (hörbares Klicken im Kameramodul) und kostet Zeit.
+  const sig = [opt.device || '', opt.res, opt.fps, opt.prefer].join('|');
+  let memo = null;
+  try { memo = JSON.parse(localStorage.getItem(MEMO) || 'null'); } catch { /* */ }
+  if (memo && memo.sig === sig && memo.deviceId) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: memo.deviceId }, width: { ideal: memo.req[0] }, height: { ideal: memo.req[1] }, frameRate: { ideal: memo.fps, max: memo.fps } } });
+    } catch { stream = null; memo = null; }
+  } else memo = null;
+  if (!stream) try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
   } catch (e) {
     // DOMException hat ein schreibgeschütztes "code" -> eigenes Fehlerobjekt
@@ -40,7 +51,7 @@ export async function startCamera(video, opt) {
   }
   let track = stream.getVideoTracks()[0];
   const cams = await listCameras();
-  let want = opt.device;
+  let want = memo ? memo.deviceId : opt.device;
   if (!want) {
     const ranked = cams.map((c, i) => ({ c, s: scoreCamera(c.label, i) })).sort((a, b) => b.s - a.s);
     if (ranked.length && ranked[0].s > 0) want = ranked[0].c.deviceId;
@@ -56,7 +67,7 @@ export async function startCamera(video, opt) {
   const fpsWant = opt.fps === 'max' ? Math.min(fpsMaxCap, 240) : Math.min(+opt.fps, fpsMaxCap);
   // Kombinationen testen: höchste Bildrate (oder Auflösung) gewinnt
   let best = null;
-  for (const [w, h] of resList(opt.res)) {
+  for (const [w, h] of memo ? [] : resList(opt.res)) {
     if (caps.width?.max && w > caps.width.max && h > caps.width.max) continue;
     try {
       await track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: fpsWant, max: fpsWant } });
@@ -69,6 +80,7 @@ export async function startCamera(video, opt) {
   }
   if (best) {
     try { await track.applyConstraints({ width: { ideal: best.req[0] }, height: { ideal: best.req[1] }, frameRate: { ideal: fpsWant, max: fpsWant } }); } catch { /* */ }
+    try { localStorage.setItem(MEMO, JSON.stringify({ sig, deviceId: track.getSettings().deviceId, req: best.req, fps: fpsWant })); } catch { /* */ }
   }
   const adv = {};
   if (caps.zoom && opt.zoom > 1) adv.zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, opt.zoom));
