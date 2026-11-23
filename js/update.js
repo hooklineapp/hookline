@@ -26,6 +26,9 @@ export async function applyUpdate(latest) {
     // neuen Service Worker mit Versionsnummer registrieren -> wird garantiert frisch geladen
     reg = await navigator.serviceWorker.register('sw.js?v=' + (latest || Date.now()), { updateViaCache: 'none' });
   } catch { await hardReload(); return; }
+  // nichts Neues zu installieren (Service Worker ist schon aktuell) -> direkt frisch laden
+  if (!reg.installing && !reg.waiting) { try { await reg.update(); } catch { /* */ } }
+  if (!reg.installing && !reg.waiting) { await hardReload(); return; }
   const w = await new Promise((res) => {
     const check = () => {
       if (reg.waiting) return res(reg.waiting);
