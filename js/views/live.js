@@ -80,7 +80,8 @@ export async function showLive() {
   updateTop();
   const q = new URLSearchParams(location.search);
   if (q.get('video') && !fileMode) { await openVideoUrl(q.get('video'), q); return; }
-  if (!fileMode && !localStorage.getItem('bt.welcome') && !q.get('video')) showWelcome();
+  // Kamera-Erlaubnis erst nach der Begrüßung anfragen (Kontext zuerst erklären)
+  if (!fileMode && !localStorage.getItem('bt.welcome') && !q.get('video')) { await showWelcome(); if (!active) return; }
   if (!fileMode) await startCam();
   if (S.get('wakeLock') && navigator.wakeLock) try { wake = await navigator.wakeLock.request('screen'); } catch { /* */ }
 }
@@ -407,10 +408,13 @@ export function startOptimize() {
 // ---------- Begrüßung (nur beim allerersten Start, überspringbar) ----------
 function showWelcome() {
   welcomeOpen = true;
+  let done;
+  const p = new Promise(r => { done = r; });
   const close = (setup) => {
     welcomeOpen = false; el.classList.add('out'); setTimeout(() => el.remove(), 220);
     try { localStorage.setItem('bt.welcome', '1'); } catch { /* */ }
-    if (setup) startWizard(); else sessionStorage.setItem('bt.skipWizard', '1');
+    if (!setup) sessionStorage.setItem('bt.skipWizard', '1');
+    done(setup);
   };
   const el = h('div.welcome', null, h('div.welcome-card', null,
     mascotOn() ? mascot('happy', { cls: 'm-welcome' }) : null,
@@ -420,6 +424,7 @@ function showWelcome() {
       h('button.pillbtn', { onclick: () => close(false) }, t('w.skip')),
       h('button.pillbtn.primary.big', { onclick: () => close(true) }, t('w.start')))));
   root.append(el);
+  return p;
 }
 
 // ---------- Kugelfarbe ----------
