@@ -19,7 +19,7 @@ let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, stat
 let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ball
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
-let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel;
+let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
 let wiz = null; // Einrichtungs-Assistent: { step, timer, preview, stable, target, busy }
@@ -146,7 +146,7 @@ function unfreeze() { stage.classList.remove('frozen'); freezeBmp?.close?.(); fr
 
 async function startCalib() {
   endMode();
-  mode = 'calib'; selCorner = -1;
+  mode = 'calib'; selCorner = -1; calSideManual = false; calTop = true;
   calBackup = corners.length === 4 ? corners.map(c => [...c]) : null;
   if (S.get('freezeOnCalib')) await doFreeze();
   if (corners.length !== 4) corners = [];
@@ -166,7 +166,10 @@ function calbar(show) {
     h('b', null, i < n ? (n === 4 && i === selCorner ? i + 1 : '✓') : i + 1), h('span', null, nm))));
   const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tapAny', { n: n + 1 }) : selCorner >= 0 ? t('cal.moveSel', { p: names[selCorner] }) : t('cal.moveAny');
   calPanel.append(
-    h('div.cal-head', null, h('b', null, t('cal.title')), h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close'))),
+    h('div.cal-head', null, h('b', null, t('cal.title')),
+      h('span.cal-hbtns', null,
+        h('button.iconbtn', { onclick: () => { calSideManual = true; setCalSide(!calTop); }, 'aria-label': t('cal.swap'), title: t('cal.swap') }, icon('swapv')),
+        h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close')))),
     steps, h('p.cal-msg', null, msg),
     h('div.cal-actions', null,
       h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { pickLane = !pickLane; calbar(true); } }, icon('magic'), t('cal.auto')),
@@ -175,6 +178,19 @@ function calbar(show) {
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
   calPanel.style.display = 'block';
+  setCalSide(calTop); autoCalSide();
+}
+// Menü oben oder unten – nie über den Ecken, die man gerade setzt oder schiebt
+function setCalSide(top) { calTop = top; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); }
+function autoCalSide(pt) {
+  if (calSideManual || calPanel.style.display === 'none') return;
+  const R = viewRect(), pr = calPanel.getBoundingClientRect(), H = pr.height + 24;
+  const pts = corners.map(c => toScreen(c[0], c[1], R)).map(([x, y]) => y + R.top);
+  if (pt) pts.push(pt);
+  const sh = stage.getBoundingClientRect();
+  const nTop = pts.filter(y => y < sh.top + H).length, nBot = pts.filter(y => y > sh.bottom - H).length;
+  if (calTop && nTop > nBot) setCalSide(false);
+  else if (!calTop && nBot > nTop) setCalSide(true);
 }
 function cancelCalib() {
   // vorherige Ecken wiederherstellen, die Kalibrierung bleibt wie sie war
@@ -232,7 +248,7 @@ function dragHandle(e, i, from) {
     el.style.left = x + 'px'; el.style.top = y + 'px';
     showLoupe(x, y); requestDraw();
   };
-  const up = () => { cap.removeEventListener('pointermove', move); cap.removeEventListener('pointerup', up); cap.removeEventListener('pointercancel', up); loupe.style.display = 'none'; };
+  const up = () => { if (mode === 'calib') autoCalSide(); cap.removeEventListener('pointermove', move); cap.removeEventListener('pointerup', up); cap.removeEventListener('pointercancel', up); loupe.style.display = 'none'; };
   cap.addEventListener('pointermove', move); cap.addEventListener('pointerup', up); cap.addEventListener('pointercancel', up);
   showLoupe(...toScreen(...corners[i], R));
 }
@@ -501,7 +517,7 @@ function endMode() {
   if (wiz) { clearInterval(wiz.timer); wiz = null; }
   optCollect = null;
   mode = 'live';
-  calbar(false);
+  calbar(false); stage.parentElement?.classList.remove('cal-top');
   handles.forEach(x => x.remove()); handles = [];
   $('#b-ball')?.classList.remove('on');
   loupe.style.display = 'none';

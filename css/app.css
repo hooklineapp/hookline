@@ -96,6 +96,15 @@ button.icon { padding: 6px 10px; font-size: 18px; }
 .calpanel { position: absolute; left: 50%; bottom: calc(12px + var(--safe-b)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); z-index: 4; padding: 14px 14px 12px;
   background: var(--panel); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); border-radius: 24px; box-shadow: var(--sh-lg); animation: rise .2s ease-out; }
 .calpanel.busy { opacity: .7; pointer-events: none; }
+.calpanel.top { bottom: auto; top: calc(10px + var(--safe-t)); }
+.cal-top .topbar { opacity: 0; pointer-events: none; }
+.cal-hbtns { display: inline-flex; gap: 6px; }
+.calpanel { padding: 10px 12px 10px; }
+.calpanel .cal-head { margin-bottom: 4px; }
+.calpanel .cal-msg { margin: 6px 2px 8px; font-size: 13px; }
+.calpanel .step { flex-direction: row; justify-content: center; gap: 5px; font-size: 10.5px; text-align: left; }
+.calpanel .step b { width: 22px; height: 22px; flex: none; }
+.calpanel .pillbtn { padding: 8px 12px; }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 12px); } }
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
 .cal-head b { font-size: 16px; }
