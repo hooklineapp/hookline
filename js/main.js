@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.5.0';
+window.BT_VERSION = '1.6.0';
 S.loadSettings();
 setLang(S.get('lang'));
 // Design: Glas/Flat und Hell/Dunkel/Automatisch
@@ -18,11 +18,12 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = dark ? 'dark' : 'light';
   root.dataset.style = S.get('uiStyle') || 'glass';
+  root.dataset.accent = S.get('accent') || 'indigo';
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0b0e15' : '#f3f4f8');
 }
 applyTheme();
 mqDark?.addEventListener?.('change', applyTheme);
-S.onChange((k) => { if (k === 'theme' || k === 'uiStyle' || k === '*') applyTheme(); });
+S.onChange((k) => { if (k === 'theme' || k === 'uiStyle' || k === 'accent' || k === '*') applyTheme(); });
 document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
 
 const views = { live: [showLive, hideLive], history: [showHistory], stats: [showStats], options: [showOptions] };

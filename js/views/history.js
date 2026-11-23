@@ -54,9 +54,9 @@ async function renderSession(id) {
   const s = await db.getOne('sessions', id);
   if (!s) { back(); return; }
   const shots = await db.shotsOf(id);
-  root.append(h('button.back', { onclick: back }, '‹ ' + t('h.sessions')),
-    h('div.row', null, h('h2', { style: { flex: 1 } }, dateStr(s.date)),
-      h('button.danger', { onclick: async () => { if (await confirmBox(t('h.deleteSession'))) { await db.deleteSession(id); if (state.session?.id === id) { state.session = null; state.shots = []; } back(); } } }, t('btn.delete'))));
+  root.append(h('button.back', { onclick: back }, '‹ ' + t('h.sessions')), h('h2', null, dateStr(s.date)));
+  const delBtn = h('div.row', { style: { justifyContent: 'center', marginTop: '22px' } },
+    h('button.skip', { onclick: async () => { if (await confirmBox(t('h.deleteSession'))) { await db.deleteSession(id); if (state.session?.id === id) { state.session = null; state.shots = []; } back(); } } }, t('h.deleteSession').replace('?', '')));
   const games = [...new Set(shots.map(x => x.game || 1))].sort((a, b) => a - b);
   for (const g of games) {
     const gs = shots.filter(x => (x.game || 1) === g);
@@ -76,6 +76,7 @@ async function renderSession(id) {
     root.append(list);
   }
   if (!shots.length) root.append(h('p.muted', null, t('h.empty')));
+  root.append(delBtn);
 }
 
 async function renderShot(id, sid) {

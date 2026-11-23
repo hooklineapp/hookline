@@ -6,8 +6,9 @@ const S = (key, type, def, extra = {}) => ({ key, type, def, ...extra });
 export const SCHEMA = [
   // Allgemein
   S('lang', 'select', 'auto', { group: 'general', options: ['auto', 'de', 'en'], basic: true }),
-  S('theme', 'select', 'auto', { group: 'general', options: ['auto', 'light', 'dark'], basic: true }),
-  S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat'], basic: true }),
+  S('theme', 'select', 'auto', { group: 'general', options: ['auto', 'light', 'dark'], basic: true, look: true }),
+  S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat', 'soft', 'sport'], basic: true, look: true }),
+  S('accent', 'select', 'indigo', { group: 'general', options: ['indigo', 'ocean', 'lane', 'mint', 'cherry', 'mono'], basic: true, look: true }),
   S('expertMode', 'bool', false, { group: 'general', hidden: true }),
   S('mascot', 'bool', true, { group: 'general', basic: true }),
   S('preset', 'select', 'recommended', { group: 'general', hidden: true, options: ['recommended', 'handheld', 'tripod', 'battery', 'precise', 'custom'] }),
@@ -84,7 +85,7 @@ export const SCHEMA = [
   S('showTrail', 'bool', true, { group: 'display' , basic: true }),
   S('showCands', 'bool', false, { group: 'display' }),
   S('showPins', 'bool', true, { group: 'display' , basic: true }),
-  S('showHud', 'bool', true, { group: 'display' , basic: true }),
+  S('showHud', 'bool', false, { group: 'display' }),
   S('debug', 'bool', false, { group: 'display', engine: true }),
   S('pinSim', 'bool', true, { group: 'display', basic: true }),
   S('pinZoom', 'bool', true, { group: 'display', basic: true }),

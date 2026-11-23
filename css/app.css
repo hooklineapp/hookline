@@ -343,3 +343,68 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 .profile-row:first-child { border-top: 0; }
 .profile-row span { flex: 1; font-weight: 600; }
 :root[data-style="flat"] .preset, :root[data-style="flat"] .welcome-card, :root[data-style="flat"] .welcome-card li, :root[data-style="flat"] .facts div { border-radius: 3px !important; }
+
+/* ---------- Farbthemen (Akzent) ---------- */
+:root[data-accent="ocean"] { --acc: #0284c7; --acc2: #06b6d4; --acc-soft: #e0f2fe; --grad: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%); }
+:root[data-accent="lane"] { --acc: #ea580c; --acc2: #f59e0b; --acc-soft: #fff1e6; --grad: linear-gradient(135deg, #ea580c 0%, #f59e0b 100%); }
+:root[data-accent="mint"] { --acc: #059669; --acc2: #10b981; --acc-soft: #e3f7ef; --grad: linear-gradient(135deg, #059669 0%, #34d399 100%); }
+:root[data-accent="cherry"] { --acc: #e11d48; --acc2: #f43f5e; --acc-soft: #ffe4ea; --grad: linear-gradient(135deg, #e11d48 0%, #fb7185 100%); }
+:root[data-accent="mono"] { --acc: #111827; --acc2: #374151; --acc-soft: #eceef2; --grad: linear-gradient(135deg, #111827 0%, #374151 100%); }
+:root[data-theme="dark"][data-accent="ocean"] { --acc: #38bdf8; --acc-soft: rgba(56, 189, 248, .14); --grad: linear-gradient(135deg, #0ea5e9, #22d3ee); }
+:root[data-theme="dark"][data-accent="lane"] { --acc: #fb923c; --acc-soft: rgba(251, 146, 60, .14); --grad: linear-gradient(135deg, #f97316, #fbbf24); }
+:root[data-theme="dark"][data-accent="mint"] { --acc: #34d399; --acc-soft: rgba(52, 211, 153, .14); --grad: linear-gradient(135deg, #10b981, #6ee7b7); }
+:root[data-theme="dark"][data-accent="cherry"] { --acc: #fb7185; --acc-soft: rgba(251, 113, 133, .14); --grad: linear-gradient(135deg, #f43f5e, #fda4af); }
+:root[data-theme="dark"][data-accent="mono"] { --acc: #e5e7eb; --acc-soft: rgba(229, 231, 235, .12); --grad: linear-gradient(135deg, #e5e7eb, #9ca3af); }
+:root[data-theme="dark"][data-accent="mono"] .fab, :root[data-theme="dark"][data-accent="mono"] .pillbtn.primary,
+:root[data-theme="dark"][data-accent="mono"] button.primary, :root[data-theme="dark"][data-accent="mono"] .tile:first-child { color: #0b0e15; }
+
+/* ---------- Design: Soft (weich, große Rundungen, viel Luft) ---------- */
+:root[data-style="soft"] { --r: 26px; --bg: #f4f2fb; --bg2: #ebe8f6; --line: #e5e1f2;
+  --sh: 0 2px 4px rgba(76, 61, 140, .05), 0 12px 30px rgba(76, 61, 140, .10); --sh-lg: 0 18px 50px rgba(76, 61, 140, .22); }
+:root[data-style="soft"][data-theme="dark"] { --bg: #0e0c18; --bg2: #1c1930; --card: #17142a; --line: #2a2545; }
+:root[data-style="soft"] .card, :root[data-style="soft"] .item, :root[data-style="soft"] .tile, :root[data-style="soft"] details.grp { border-radius: 26px; }
+:root[data-style="soft"] .card, :root[data-style="soft"] .item { padding: 16px 18px; }
+:root[data-style="soft"] .pillbtn, :root[data-style="soft"] .card button, :root[data-style="soft"] .sheet button { border-radius: 18px; }
+:root[data-style="soft"] .dock { border-radius: 34px; padding: 9px; }
+:root[data-style="soft"] .fab { width: 70px; height: 70px; }
+:root[data-style="soft"] .shotcard, :root[data-style="soft"] .calpanel { border-radius: 30px; }
+
+/* ---------- Design: Sport (kräftige Kanten, harter Schatten) ---------- */
+:root[data-style="sport"] { --r: 10px; --sh: 3px 3px 0 var(--ink); --sh-lg: 4px 4px 0 var(--ink); --grad: var(--acc); }
+:root[data-style="sport"] * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-style="sport"] .card, :root[data-style="sport"] .item, :root[data-style="sport"] .tile, :root[data-style="sport"] details.grp,
+:root[data-style="sport"] .dock, :root[data-style="sport"] .calpanel, :root[data-style="sport"] .shotcard, :root[data-style="sport"] .chip,
+:root[data-style="sport"] .avatar, :root[data-style="sport"] .score, :root[data-style="sport"] .replay, :root[data-style="sport"] .welcome-card,
+:root[data-style="sport"] .sheet { border: 2px solid var(--ink) !important; }
+:root[data-style="sport"] .dock, :root[data-style="sport"] .calpanel, :root[data-style="sport"] .shotcard, :root[data-style="sport"] .chip,
+:root[data-style="sport"] .avatar { background: var(--card); }
+:root[data-style="sport"] .card, :root[data-style="sport"] .item, :root[data-style="sport"] .tile, :root[data-style="sport"] details.grp,
+:root[data-style="sport"] .pillbtn, :root[data-style="sport"] .card button, :root[data-style="sport"] .sheet button, :root[data-style="sport"] .chip,
+:root[data-style="sport"] .dock, :root[data-style="sport"] .calpanel, :root[data-style="sport"] .shotcard, :root[data-style="sport"] .welcome-card { border-radius: 10px !important; }
+:root[data-style="sport"] .pillbtn, :root[data-style="sport"] .card button, :root[data-style="sport"] .sheet button { border: 2px solid var(--ink) !important; box-shadow: 2px 2px 0 var(--ink); font-weight: 750; }
+:root[data-style="sport"] .pillbtn.primary, :root[data-style="sport"] button.primary { background: var(--acc); color: #fff; }
+:root[data-style="sport"] .fab { border-radius: 14px; border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); background: var(--acc); }
+:root[data-style="sport"] h2 { text-transform: uppercase; letter-spacing: .02em; font-weight: 850; }
+:root[data-style="sport"] .tile b, :root[data-style="sport"] .sc-stat b { font-weight: 850; }
+:root[data-style="sport"] #tabs { border-top: 2px solid var(--ink); }
+:root[data-style="sport"] #tabs button.active { background: var(--acc); color: #fff; }
+:root[data-style="sport"][data-theme="dark"] { --sh: 3px 3px 0 #000; --sh-lg: 4px 4px 0 #000; }
+
+/* ---------- Aussehen-Auswahl ---------- */
+.look { display: grid; gap: 12px; padding: 4px 16px 14px; }
+.look-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.look-row > span { font-size: 14px; }
+.designs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.design { padding: 8px !important; border-radius: 14px !important; display: grid; gap: 6px; justify-items: center; font-size: 12px; font-weight: 650; background: var(--bg) !important; border: 2px solid transparent !important; box-shadow: none !important; }
+.design.on { border-color: var(--acc) !important; }
+.design .pv { width: 100%; aspect-ratio: 1 / .8; border-radius: 10px; background: #eceef4; position: relative; overflow: hidden; }
+.design .pv i { position: absolute; left: 12%; right: 12%; bottom: 10%; height: 26%; background: #fff; }
+.design .pv b { position: absolute; left: 50%; bottom: 16%; width: 18%; aspect-ratio: 1; transform: translateX(-50%); background: var(--acc); }
+.design .pv u { position: absolute; left: 12%; top: 12%; width: 46%; height: 14%; background: #fff; }
+.pv.glass i { border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,.12); } .pv.glass b { border-radius: 50%; background: var(--grad); } .pv.glass u { border-radius: 99px; }
+.pv.flat i, .pv.flat u { border-radius: 2px; border: 1px solid #d5d9e2; } .pv.flat b { border-radius: 2px; }
+.pv.soft { background: #ece8f8 !important; } .pv.soft i { border-radius: 16px; box-shadow: 0 6px 14px rgba(76,61,140,.18); } .pv.soft b { border-radius: 50%; } .pv.soft u { border-radius: 99px; }
+.pv.sport i, .pv.sport u { border-radius: 4px; border: 2px solid #111; box-shadow: 2px 2px 0 #111; } .pv.sport b { border-radius: 4px; border: 2px solid #111; }
+.accents { display: flex; gap: 10px; flex-wrap: wrap; }
+.accent { width: 34px; height: 34px; padding: 0 !important; border-radius: 50% !important; border: 3px solid var(--card) !important; box-shadow: 0 0 0 1px var(--line) !important; }
+.accent.on { box-shadow: 0 0 0 2.5px var(--ink) !important; }

@@ -18,6 +18,7 @@ export async function showOptions() {
     h('div.seg', null,
       h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(); } }, t('o.normal')),
       h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(); } }, t('o.expert')))));
+  root.append(lookCard());
   root.append(presetsCard());
   root.append(profilesCard());
   root.append(await bowlersCard());
@@ -57,7 +58,7 @@ async function editBowler(b, isNew) {
 }
 
 async function groupEl(g, expert) {
-  const items = S.SCHEMA.filter(x => x.group === g && !x.hidden && (expert || x.basic));
+  const items = S.SCHEMA.filter(x => x.group === g && !x.hidden && !x.look && (expert || x.basic));
   if (!items.length) return null;
   const d = h('details.grp', { open: g === 'general' && !expert }, h('summary', null, t('g.' + g)));
   let cams = [];
@@ -155,4 +156,18 @@ function profilesCard() {
     h('div', { style: { padding: '4px 16px 12px' } }, rows,
       h('div.row', { style: { marginTop: '10px' } }, name,
         h('button.primary', { onclick: () => { const n = name.value.trim(); if (!n) { name.focus(); return; } S.saveProfile(n); toast(t('o.profileSaved'), 'ok'); showOptions(); } }, t('btn.save')))));
+}
+
+const ACC = { indigo: '#4f46e5', ocean: '#0284c7', lane: '#ea580c', mint: '#059669', cherry: '#e11d48', mono: '#111827' };
+function lookCard() {
+  const th = S.get('theme'), st = S.get('uiStyle'), ac = S.get('accent');
+  const seg = h('div.seg', null, ['auto', 'light', 'dark'].map(v => h('button' + (v === th ? '.on' : ''), { onclick: () => { S.set('theme', v); showOptions(); } }, t('val.' + v))));
+  const designs = h('div.designs', null, ['glass', 'flat', 'soft', 'sport'].map(v => h('button.design' + (v === st ? '.on' : ''), { onclick: () => { S.set('uiStyle', v); showOptions(); } },
+    h('span.pv.' + v, null, h('u'), h('i'), h('b')), t('val.' + v))));
+  const accents = h('div.accents', null, Object.entries(ACC).map(([k, c]) => h('button.accent' + (k === ac ? '.on' : ''), { style: { background: c }, title: t('acc.' + k), 'aria-label': t('acc.' + k), onclick: () => { S.set('accent', k); showOptions(); } })));
+  return h('div.card', null, h('b', null, t('o.look')),
+    h('div.look', { style: { padding: '10px 0 0' } },
+      h('div.look-row', null, h('span', null, t('opt.theme')), seg),
+      designs,
+      h('div.look-row', null, h('span', null, t('o.accent')), accents)));
 }
