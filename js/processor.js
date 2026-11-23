@@ -178,9 +178,11 @@ export class Processor {
   // Ohne requestVideoFrameCallback (alte Browser): Bild für Bild springen.
   async runFile(video, fps, onProgress, shouldStop) {
     this.stop();
-    this.source = 'file';
     const dur = video.duration;
-    if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype) || this.forceSeek) return this._runFileSeek(video, fps, onProgress, shouldStop, dur);
+    // Bilder holen: per requestVideoFrameCallback (genau jedes Bild), sonst per Bildschirm-Takt (currentTime),
+    // erst wenn das Video gar nicht läuft: Bild für Bild springen (langsam)
+    let mode = 'requestVideoFrameCallback' in HTMLVideoElement.prototype ? 'vfc' : 'raf';
+    this.source = 'file:' + mode;
     video.pause(); video.muted = true;
     if (video.currentTime > 0.01) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = 0; }); }
     let rate = 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0;
@@ -206,10 +208,10 @@ export class Processor {
         if (done) return;
         if (shouldStop()) { finish(); return; }
         const t = meta.mediaTime * 1000;
-        if (t <= lastT && seen) { video.requestVideoFrameCallback(onFrame); return; }
+        if (t <= lastT && seen) { schedule(); return; }
         lastT = t; seen++;
         let bmp;
-        try { bmp = await createImageBitmap(video); } catch { video.requestVideoFrameCallback(onFrame); return; }
+        try { bmp = await createImageBitmap(video); } catch { schedule(); return; }
         if (busy) { if (pending) { pending.bmp.close?.(); dropped++; } pending = { bmp, t }; } else run(bmp, t);
         // Geschwindigkeit anpassen: Bilder ausgelassen -> langsamer, sonst etwas schneller (max. Echtzeit)
         const nowMs = performance.now();
@@ -219,20 +221,37 @@ export class Processor {
           if (rate !== r0) video.playbackRate = rate;
           dropped = 0; lastAdapt = nowMs;
         }
-        video.requestVideoFrameCallback(onFrame);
+        schedule();
+      };
+      const schedule = () => {
+        if (done) return;
+        if (mode === 'vfc') video.requestVideoFrameCallback(onFrame);
+        else requestAnimationFrame(() => onFrame(0, { mediaTime: video.currentTime }));
       };
       const fallback = () => {             // keine Bilder (z. B. Seite im Hintergrund): Bild für Bild auswerten
         if (done) return; done = true;
         video.pause(); video.playbackRate = 1; video.onended = null;
+        this.source = 'file:seek';
         resolve(this._runFileSeek(video, fps, onProgress, shouldStop, dur));
       };
       video.onended = () => { if (!seen) fallback(); else if (!busy && !pending) finish(); };
-      video.requestVideoFrameCallback(onFrame);
+      schedule();
       video.play().catch(fallback);
-      setTimeout(() => { if (!seen) fallback(); }, 1500);
+      // Wächter: läuft das Video, kommen aber keine Bildmeldungen, auf Bildschirm-Takt wechseln;
+      // läuft es gar nicht (Seite im Hintergrund, Decoder hängt), nach einigen Sekunden Bild für Bild
+      const t0 = performance.now();
+      const guard = () => {
+        if (done || seen) return;
+        const el = performance.now() - t0;
+        if (mode === 'vfc' && video.currentTime > 0.03) { mode = 'raf'; this.source = 'file:raf'; schedule(); }
+        if (el > 6000) { fallback(); return; }
+        setTimeout(guard, 500);
+      };
+      setTimeout(guard, 1500);
     });
   }
   async _runFileSeek(video, fps, onProgress, shouldStop, dur) {
+    this.source = 'file:seek';
     const n = Math.floor(dur * fps);
     video.pause();
     for (let i = 0; i < n; i++) {
