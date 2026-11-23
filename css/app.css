@@ -574,3 +574,9 @@ button.danger, .row > button.danger { background: var(--bad); }
 input.inp { min-height: 44px; }
 .view .row > button, .rctl button { min-width: 44px; }
 .rctl button.primary { width: 48px; height: 48px; }
+
+/* ---------- Ecken: Punkt wählen und von überall verschieben ---------- */
+button.step { background: none !important; border: 0 !important; box-shadow: none !important; padding: 4px 0 !important; min-height: 44px; min-width: 0 !important; font: inherit; font-size: 11px; color: var(--mute); cursor: pointer; }
+.step.sel { color: var(--ink); font-weight: 700; }
+.step.sel b { background: var(--acc) !important; color: #fff !important; box-shadow: 0 0 0 4px var(--acc-soft); }
+.handle.sel { border-color: #facc15; box-shadow: 0 0 0 3px rgba(250, 204, 21, .55), 0 2px 8px rgba(0, 0, 0, .35); }

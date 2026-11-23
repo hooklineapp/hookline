@@ -21,6 +21,7 @@ let corners = [], handles = [], calibrated = false, last = null, lastShot = null
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel;
 let optCollect = null, welcomeOpen = false;
+let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
 let wiz = null; // Einrichtungs-Assistent: { step, timer, preview, stable, target, busy }
 
 export function initLive(el) {
@@ -145,7 +146,7 @@ function unfreeze() { stage.classList.remove('frozen'); freezeBmp?.close?.(); fr
 
 async function startCalib() {
   endMode();
-  mode = 'calib';
+  mode = 'calib'; selCorner = -1;
   calBackup = corners.length === 4 ? corners.map(c => [...c]) : null;
   if (S.get('freezeOnCalib')) await doFreeze();
   if (corners.length !== 4) corners = [];
@@ -160,14 +161,16 @@ function calbar(show) {
   const names = [t('cal.p0'), t('cal.p1'), t(pit ? 'cal.p2pit' : 'cal.p2'), t(pit ? 'cal.p3pit' : 'cal.p3')];
   const n = corners.length;
   calPanel.innerHTML = '';
-  const steps = h('div.steps', null, names.map((nm, i) => h('div.step' + (i < n ? '.done' : i === n && !pickLane ? '.cur' : ''), null, h('b', null, i < n ? '✓' : i + 1), h('span', null, nm))));
-  const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tap', { p: names[n] }) : t('cal.allSet');
+  const steps = h('div.steps', null, names.map((nm, i) => h((n === 4 ? 'button' : 'div') + '.step' + (i < n ? '.done' : i === n && !pickLane ? '.cur' : '') + (n === 4 && i === selCorner ? '.sel' : ''),
+    n === 4 ? { type: 'button', onclick: () => { selCorner = selCorner === i ? -1 : i; placeHandles(); calbar(true); } } : null,
+    h('b', null, i < n ? (n === 4 && i === selCorner ? i + 1 : '✓') : i + 1), h('span', null, nm))));
+  const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tap', { p: names[n] }) : selCorner >= 0 ? t('cal.moveSel', { p: names[selCorner] }) : t('cal.moveAny');
   calPanel.append(
     h('div.cal-head', null, h('b', null, t('cal.title')), h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close'))),
     steps, h('p.cal-msg', null, msg),
     h('div.cal-actions', null,
       h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { pickLane = !pickLane; calbar(true); } }, icon('magic'), t('cal.auto')),
-      h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
+      h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; selCorner = -1; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
   calPanel.style.display = 'block';
@@ -195,15 +198,17 @@ function placeHandles() {
   const R = viewRect();
   corners.forEach((c, i) => {
     const [x, y] = toScreen(c[0], c[1], R);
-    const el = h('div.handle', { style: { left: x + 'px', top: y + 'px' } }, h('span', null, i + 1));
+    const el = h('div.handle' + (i === selCorner ? '.sel' : ''), { style: { left: x + 'px', top: y + 'px' } }, h('span', null, i + 1));
     el.addEventListener('pointerdown', (e) => dragHandle(e, i));
     stage.append(el); handles.push(el);
   });
 }
-function dragHandle(e, i) {
+function dragHandle(e, i, from) {
   e.stopPropagation(); e.preventDefault();
+  if (selCorner !== i) { selCorner = i; handles.forEach((x, k) => x.classList.toggle('sel', k === i)); if (mode === 'calib') calbar(true); }
   const el = handles[i];
-  el.setPointerCapture(e.pointerId);
+  const cap = from || el;
+  cap.setPointerCapture(e.pointerId);
   const R = viewRect();
   const start = [e.clientX, e.clientY], c0 = [...corners[i]];
   const move = (ev) => {
@@ -214,8 +219,8 @@ function dragHandle(e, i) {
     el.style.left = x + 'px'; el.style.top = y + 'px';
     showLoupe(x, y); requestDraw();
   };
-  const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); loupe.style.display = 'none'; };
-  el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  const up = () => { cap.removeEventListener('pointermove', move); cap.removeEventListener('pointerup', up); cap.removeEventListener('pointercancel', up); loupe.style.display = 'none'; };
+  cap.addEventListener('pointermove', move); cap.addEventListener('pointerup', up); cap.addEventListener('pointercancel', up);
   showLoupe(...toScreen(...corners[i], R));
 }
 function showLoupe(x, y) {
@@ -485,6 +490,14 @@ function onPointerDown(e) {
   if (mode === 'calib' && pickLane) {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] >= 0 && n[0] <= 1 && n[1] >= 0 && n[1] <= 1) runAuto(n);
+  } else if (mode === 'calib' && corners.length === 4 && handles.length === 4) {
+    // Touchpad: irgendwo ziehen bewegt die gewählte Ecke (sonst die nächste) – auch Ecken am Bildrand erreichbar
+    let i = selCorner;
+    if (i < 0) {
+      const R = viewRect(); let best = 1e9;
+      corners.forEach((c, k) => { const [x, y] = toScreen(c[0], c[1], R); const d = Math.hypot(x - e.clientX + R.left, y - e.clientY + R.top); if (d < best) { best = d; i = k; } });
+    }
+    dragHandle(e, i, stage);
   } else if (mode === 'calib' && corners.length < 4) {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
