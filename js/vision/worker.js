@@ -1,6 +1,9 @@
 // Worker: nimmt ImageBitmap / VideoFrame entgegen (oder liest selbst einen übertragenen Kamera-Track),
 // skaliert auf Arbeitsauflösung und schneidet den Pin-Bereich in voller Auflösung aus.
 import { Engine } from './engine.js';
+import { autoLane } from './autolane.js';
+import { snapCorners } from './snap.js';
+import { toGray } from './lk.js';
 
 const engine = new Engine();
 let canvas = null, ctx = null, cropCanvas = null, cctx = null;
@@ -33,6 +36,15 @@ function cropFrom(src, rect, max) {
   return { data: img.data, width: cw, height: ch, rect };
 }
 
+export function autoCorners(frame, a) {
+  const { width: w, height: h } = frame;
+  const r = autoLane(frame, a.target ? { target: [a.target[0] * w - 0.5, a.target[1] * h - 0.5] } : {});
+  if (!r.corners) return { error: r.error || 'fail' };
+  const sn = snapCorners(toGray(frame.data, w, h), w, h, r.corners, a.yTop || 18.288);
+  const c = (sn ? sn.corners : r.corners).map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]);
+  return { corners: c };
+}
+
 function handle(m, src) {
   const t0 = performance.now();
   const frame = frameFrom(src);
@@ -40,6 +52,8 @@ function handle(m, src) {
   let res;
   if (m.calibrate) {
     res = { type: 'calibrated', info: engine.calibrate(frame, m.calibrate), w: frame.width, h: frame.height };
+  } else if (m.auto) {
+    res = { type: 'auto', ...autoCorners(frame, m.auto) };
   } else if (m.sample) {
     res = { type: 'color', color: engine.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
   } else {

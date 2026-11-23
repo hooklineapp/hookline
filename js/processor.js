@@ -1,6 +1,9 @@
 // Bildzufuhr: holt so viele Kamerabilder wie möglich und gibt sie an die Auswertung (Worker oder Hauptthread).
 // Reihenfolge: MediaStreamTrackProcessor (jedes Kamerabild, exakte Zeit) -> Track im Worker -> requestVideoFrameCallback -> rAF.
 import { Engine } from './vision/engine.js';
+import { autoLane } from './vision/autolane.js';
+import { snapCorners } from './vision/snap.js';
+import { toGray } from './vision/lk.js';
 
 class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im Worker kann
   constructor(onmsg) { this.e = new Engine(); this.onmessage = onmsg; this.c = document.createElement('canvas'); this.cx = this.c.getContext('2d', { willReadFrequently: true }); this.cc = document.createElement('canvas'); this.ccx = this.cc.getContext('2d', { willReadFrequently: true }); this.workW = 640; }
@@ -28,6 +31,11 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
     let res;
     if (m.calibrate) res = { type: 'calibrated', info: e.calibrate(frame, m.calibrate), w, h };
     else if (m.sample) res = { type: 'color', color: e.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
+    else if (m.auto) {
+      const r = autoLane(frame, m.auto.target ? { target: [m.auto.target[0] * w - 0.5, m.auto.target[1] * h - 0.5] } : {});
+      if (!r.corners) res = { type: 'auto', error: r.error };
+      else { const sn = snapCorners(toGray(frame.data, w, h), w, h, r.corners, m.auto.yTop || 18.288); res = { type: 'auto', corners: (sn ? sn.corners : r.corners).map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]) }; }
+    }
     else {
       const rect = e.cropRequest(m.t);
       let crop = null;
@@ -85,7 +93,7 @@ export class Processor {
     if (m.type === 'trackOk') { this.source = 'track-worker'; return; }
     if (m.type === 'trackFail') { this._startVFC(); return; }
     if (m.type === 'flushed') { this.onResult(m); return; }
-    if (m.type === 'result' || m.type === 'calibrated' || m.type === 'color' || m.type === 'error') {
+    if (m.type === 'result' || m.type === 'calibrated' || m.type === 'color' || m.type === 'auto' || m.type === 'error') {
       if (this.waiters.has(m.seq)) { this.waiters.get(m.seq)(m); this.waiters.delete(m.seq); this.busy = Math.max(0, this.busy - 1); return; }
       if (m.type === 'result') { this._cnt.proc++; this._cnt.ms += m.ms; }
       if (this.source !== 'track-worker') this.busy = Math.max(0, this.busy - 1);

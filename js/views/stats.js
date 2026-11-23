@@ -92,8 +92,8 @@ function lineChart(vals, unit, band) {
     add('text', { x: 2, y: Y(g) + 4, 'font-size': 11, fill: '#6b7280' }).textContent = g.toFixed(1);
   }
   const d = vals.map((y, i) => isFinite(y) ? `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(y).toFixed(1)}` : '').join('');
-  add('path', { d, fill: 'none', stroke: '#2f6fed', 'stroke-width': 2 });
-  vals.forEach((y, i) => { if (isFinite(y)) add('circle', { cx: X(i), cy: Y(y), r: 2.5, fill: '#2f6fed' }); });
+  add('path', { d, fill: 'none', stroke: '#4f46e5', 'stroke-width': 2 });
+  vals.forEach((y, i) => { if (isFinite(y)) add('circle', { cx: X(i), cy: Y(y), r: 2.5, fill: '#4f46e5' }); });
   add('text', { x: W - 8, y: H - 4, 'font-size': 11, fill: '#6b7280', 'text-anchor': 'end' }).textContent = unit;
   return svg;
 }
@@ -109,7 +109,7 @@ function histChart(vals, lo, hi, pMin, pMax) {
   const add = (tag, a) => { const e = document.createElementNS(ns, tag); for (const k in a) e.setAttribute(k, a[k]); svg.append(e); return e; };
   bins.forEach((c, i) => {
     const b = lo + i, hh = (H - 30) * c / mx;
-    add('rect', { x: 10 + i * bw + 1, y: H - 18 - hh, width: bw - 2, height: hh, rx: 2, fill: b >= pMin && b <= pMax ? '#16a34a' : '#2f6fed' });
+    add('rect', { x: 10 + i * bw + 1, y: H - 18 - hh, width: bw - 2, height: hh, rx: 2, fill: b >= pMin && b <= pMax ? '#10b981' : '#4f46e5' });
     if (b % 5 === 0) add('text', { x: 10 + i * bw + bw / 2, y: H - 4, 'font-size': 11, fill: '#6b7280', 'text-anchor': 'middle' }).textContent = b;
   });
   return svg;

@@ -27,13 +27,14 @@ export function toast(msg, kind = '') {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = ''; }, 2200);
 }
 
-export function sheet(title, body, actions = []) {
+export function sheet(title, body, actions = [], opts = {}) {
   return new Promise((resolve) => {
     const close = (v) => { wrap.classList.remove('open'); setTimeout(() => wrap.remove(), 180); resolve(v); };
     const wrap = h('div.sheet-wrap', { onclick: (e) => { if (e.target === wrap) close(null); } },
       h('div.sheet', null,
         h('div.sheet-head', null, h('b', null, title), h('button.icon', { onclick: () => close(null), 'aria-label': t('btn.close') }, '✕')),
-        h('div.sheet-body', null, body),
+        h('div.sheet-body', null, body, opts.menu ? h('div.menu', null, opts.menu.map(m => h('button.menuitem', { onclick: () => close(m.value) },
+          m.icon ? icon(m.icon) : null, h('span', null, m.label), m.sub ? h('small', null, m.sub) : null))) : null),
         actions.length ? h('div.sheet-actions', null, actions.map(a =>
           h('button' + (a.primary ? '.primary' : '') + (a.danger ? '.danger' : ''), { onclick: () => close(a.value) }, a.label))) : null));
     document.body.append(wrap);
@@ -58,3 +59,28 @@ export function beep(f = 880, d = 0.08) {
 }
 
 export function fmt(v, d = 1) { return v == null || !isFinite(v) ? '–' : (+v).toFixed(d); }
+
+// Linien-Icons (24er Raster, currentColor)
+const ICONS = {
+  corners: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  ball: '<circle cx="12" cy="12" r="8.5"/><circle cx="10" cy="9" r="1.2" class="f"/><circle cx="13.5" cy="8.3" r="1.2" class="f"/><circle cx="12.6" cy="11.8" r="1.3" class="f"/>',
+  play: '<path d="M8 5.5v13l11-6.5z" class="f"/>',
+  pause: '<rect x="6.5" y="5.5" width="4" height="13" rx="1" class="f"/><rect x="13.5" y="5.5" width="4" height="13" rx="1" class="f"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  more: '<circle cx="5.5" cy="12" r="1.6" class="f"/><circle cx="12" cy="12" r="1.6" class="f"/><circle cx="18.5" cy="12" r="1.6" class="f"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3z"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path d="M9 9l-4-4M15 9l4-4M9 15l-4 4M15 15l4 4"/>',
+  magic: '<path d="M5 19L15 9M14 4v3M19 9h-3M17.5 5.5l-2 2M8 4l.8 1.7L10.5 6.5 8.8 7.3 8 9l-.8-1.7L5.5 6.5l1.7-.8z"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/>',
+  pins: '<path d="M12 3c1.4 0 2 1.2 2 2.6 0 1.6-1 2.4-1 4 0 2 2.2 3.4 2.2 6.4 0 2.6-1.4 5-3.2 5s-3.2-2.4-3.2-5c0-3 2.2-4.4 2.2-6.4 0-1.6-1-2.4-1-4C10 4.2 10.6 3 12 3z"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  reset: '<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.5L4 10"/>',
+  hand: '<path d="M8 12V6.5a1.5 1.5 0 013 0V11M11 10.5V5a1.5 1.5 0 013 0v5.5M14 10.5V7a1.5 1.5 0 013 0v6c0 4-2.5 7-6 7-2.6 0-4-1.4-5.2-3.4L4 13.5a1.5 1.5 0 012.6-1.5L8 14"/>',
+};
+export function icon(name, cls = '') {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'ic ' + cls); s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = ICONS[name] || '';
+  return s;
+}

@@ -85,6 +85,8 @@ export function metricList(an, shot) {
     M('m.launchAngle', u(an.launchAngle, 1, '°')),
     M('m.hook', fmt(an.hookBoards, 1) + ' ' + t('m.boards')),
     M('m.speedRelease', speedStr(an.speedRelease)),
+    M('m.speedLoss', an.speedLoss != null ? speedStr(an.speedLoss) : '–'),
+    M('m.hookFactor', u(an.hookFactor, 1, ' ' + t('m.bps2'))),
     M('m.speedImpact', speedStr(an.speedImpact)),
     M('m.travel', an.travelTime ? fmt(an.travelTime, 2) + ' s' : '–'),
     M('m.pocket', t('pocket.' + an.pocket) + (an.gutter ? ' · ' + t('m.gutter') : '')),

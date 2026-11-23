@@ -70,6 +70,7 @@ export const SCHEMA = [
   // Kalibrierung
   S('topLine', 'select', E.topLine, { group: 'calib', options: ['headpin', 'pit'], engine: true }),
   S('snapCorners', 'bool', E.snapCorners, { group: 'calib', engine: true }),
+  S('autoWizard', 'bool', true, { group: 'calib' }),
   S('freezeOnCalib', 'bool', true, { group: 'calib' }),
   S('loupe', 'bool', true, { group: 'calib' }),
   // Anzeige

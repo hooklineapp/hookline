@@ -150,8 +150,24 @@ export function analyzeShot(points, opt = {}) {
   else if (entryBoard >= 40 - pMax && entryBoard <= 40 - pMin) pocket = 'brooklyn';
   else if (entryBoard > pMax && entryBoard < 40 - pMax) pocket = 'head';
   const gutter = Math.min(...path.map(p => p[1])) < -0.02 || Math.max(...path.map(p => p[1])) > 1.0541 + 0.02;
+  // Hook Factor: größte seitliche Beschleunigung (Bretter/s²) im Hook-Bereich: a_x ≈ x''(y)·v²
+  let hookFactor = null;
+  if (path.length > 8) {
+    let mx = 0;
+    for (let k = 4; k < path.length - 4; k++) {
+      const [y0, x0] = path[k - 4], [y1, x1] = path[k], [y2, x2] = path[k + 4];
+      if (y1 < 6 || y1 > HEADPIN_Y - 0.5) continue;
+      const h1 = y1 - y0, h2 = y2 - y1;
+      const xpp = 2 * ((x2 - x1) / h2 - (x1 - x0) / h1) / (h1 + h2);
+      const v = vAt(y1);
+      mx = Math.max(mx, Math.abs(xpp) * v * v / BOARD_W);
+    }
+    hookFactor = mx;
+  }
+  const speedRelease = vAt(Math.max(0, yMin)), speedImpact = vAt(Math.min(HEADPIN_Y, yMax));
   return {
-    speedAvg, speedRelease: vAt(Math.max(0, yMin)), speedImpact: vAt(Math.min(HEADPIN_Y, yMax)),
+    hookFactor, speedLoss: speedRelease - speedImpact,
+    speedAvg, speedRelease, speedImpact,
     travelTime: isFinite(travel) ? travel : null,
     // Werte weit außerhalb der gesehenen Strecke nicht raten
     boardFoul: yMin <= 2.5 ? B(0) : null, boardArrows: yMin <= 15 * FT + 1.5 ? B(15 * FT) : null, boardDots: yMin <= 7 * FT + 1 ? B(7 * FT) : null,

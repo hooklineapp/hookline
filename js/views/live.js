@@ -1,5 +1,5 @@
 // Live-Ansicht: Kamera, Ecken setzen, Kugel antippen, Overlay, Wurf-Ereignisse.
-import { h, $, toast, buzz, beep, fmt } from '../ui.js';
+import { h, $, toast, buzz, beep, fmt, icon, sheet } from '../ui.js';
 import { t } from '../i18n.js';
 import * as S from '../settings.js';
 import { startCamera, stopStream } from '../camera.js';
@@ -17,7 +17,8 @@ let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, stat
 let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ball
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
-let freezeBmp = null, pendingFps = 0;
+let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel;
+let wiz = null; // Einrichtungs-Assistent: { step, timer, preview, stable, target, busy }
 
 export function initLive(el) {
   root = el;
@@ -29,21 +30,21 @@ export function initLive(el) {
   hint = h('div.empty-hint', null, h('div', null, t('st.starting')));
   progress = h('div.progress', { style: { transform: 'scaleX(0)' } });
   stage = h('div.stage', null, video, freeze, ov, hint, loupe, debugCv, progress);
-  statusPill = h('span.pill', null, h('i.dot'), h('span', null, ''));
-  framePill = h('span.pill.framepill.btn', { onclick: showGame }, '');
-  bowlerPill = h('span.pill.btn', { onclick: () => document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'options' })) }, '');
+  statusPill = h('span.chip.status', null, h('i.dot'), h('span', null, ''));
+  framePill = h('button.chip.game', { onclick: showGame }, '');
+  bowlerPill = h('button.avatar', { onclick: () => document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'options' })), 'aria-label': t('o.bowlers') }, '');
   hud = h('span.hud', null, '');
-  const top = h('div.topbar', null, statusPill, framePill, bowlerPill, h('span.spacer'), hud);
-  const btn = (id, label, on) => h('button', { id, onclick: on }, label);
-  const controls = h('div.controls', null,
-    btn('b-cal', t('btn.calib'), () => mode === 'calib' ? finishCalib() : startCalib()),
-    btn('b-ball', t('btn.ball'), () => mode === 'ball' ? endMode() : startBall()),
-    btn('b-run', t('btn.pause'), togglePause),
-    btn('b-game', t('btn.newGame'), async () => { await newGame(); syncPins(); updateTop(); toast(t('btn.newGame')); }),
-    btn('b-file', t('btn.file'), pickFile),
-    btn('b-fs', '⛶', toggleFullscreen));
+  const top = h('div.topbar', null, h('div.tb-left', null, statusPill, hud), framePill, bowlerPill);
+  const dbtn = (id, ic, label, on) => h('button.dbtn', { id, onclick: on, 'aria-label': label }, icon(ic), h('span', null, label));
+  dock = h('div.dock', null,
+    dbtn('b-cal', 'corners', t('btn.setup'), () => startWizard()),
+    dbtn('b-ball', 'ball', t('btn.ball'), () => mode === 'ball' ? endMode() : startBall()),
+    h('button.fab', { id: 'b-run', onclick: togglePause, 'aria-label': t('btn.pause') }, icon('pause')),
+    dbtn('b-game', 'plus', t('btn.newGame'), async () => { await newGame(); syncPins(); updateTop(); toast(t('btn.newGame')); }),
+    dbtn('b-more', 'more', t('btn.more'), moreMenu));
+  calPanel = h('div.calpanel', { style: { display: 'none' } });
   shotCard = h('div.shotcard', { style: { display: 'none' }, onclick: () => lastShot && openShot(lastShot) });
-  root.append(stage, top, controls, shotCard);
+  root.append(stage, top, shotCard, dock, calPanel);
   octx = ov.getContext('2d'); fctx = freeze.getContext('2d'); lctx = loupe.firstChild.getContext('2d');
   stage.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('resize', () => { requestDraw(); placeHandles(); });
@@ -97,6 +98,7 @@ async function startCam() {
     proc.attach(video, cam.track);
     if (corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
+    if (!calibrated && S.get('autoWizard')) startWizard();
   } catch (e) {
     const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
     hint.style.display = 'grid'; hint.firstChild.textContent = msg + ' — ' + t('btn.file') + ' ↓';
@@ -136,30 +138,52 @@ function unfreeze() { stage.classList.remove('frozen'); freezeBmp?.close?.(); fr
 async function startCalib() {
   endMode();
   mode = 'calib';
-  $('#b-cal').classList.add('on'); $('#b-cal').textContent = t('btn.done');
+  calBackup = corners.length === 4 ? corners.map(c => [...c]) : null;
   if (S.get('freezeOnCalib')) await doFreeze();
   if (corners.length !== 4) corners = [];
+  dock.style.display = 'none'; shotCard.classList.add('hidden');
   calbar(true);
-  setStatus('st.nocal', 'warn');
   placeHandles();
   requestDraw();
 }
 function calbar(show) {
-  let el = $('.calbar', root);
-  if (!show) { el?.remove(); return; }
-  if (!el) { el = h('div.calbar'); root.append(el); }
+  if (!show) { calPanel.style.display = 'none'; calPanel.innerHTML = ''; return; }
   const pit = S.get('topLine') === 'pit';
   const names = [t('cal.p0'), t('cal.p1'), t(pit ? 'cal.p2pit' : 'cal.p2'), t(pit ? 'cal.p3pit' : 'cal.p3')];
-  el.innerHTML = '';
-  el.append(corners.length < 4 ? t('cal.hint', { p: (corners.length + 1) + ' = ' + names[corners.length] }) : t('cal.allSet'),
-    h('div.row', { style: { justifyContent: 'center', marginTop: '6px' } },
-      h('button', { onclick: () => { corners = []; placeHandles(); calbar(true); requestDraw(); } }, t('btn.reset')),
-      h('button', { onclick: () => { endMode(); } }, t('btn.cancel')),
-      h('button.primary', { disabled: corners.length !== 4, onclick: finishCalib }, t('btn.done'))));
+  const n = corners.length;
+  calPanel.innerHTML = '';
+  const steps = h('div.steps', null, names.map((nm, i) => h('div.step' + (i < n ? '.done' : i === n && !pickLane ? '.cur' : ''), null, h('b', null, i < n ? '✓' : i + 1), h('span', null, nm))));
+  const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tap', { p: names[n] }) : t('cal.allSet');
+  calPanel.append(
+    h('div.cal-head', null, h('b', null, t('cal.title')), h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close'))),
+    steps, h('p.cal-msg', null, msg),
+    h('div.cal-actions', null,
+      h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { pickLane = !pickLane; calbar(true); } }, icon('magic'), t('cal.auto')),
+      h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
+      h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
+      h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
+  calPanel.style.display = 'block';
+}
+function cancelCalib() {
+  // vorherige Ecken wiederherstellen, die Kalibrierung bleibt wie sie war
+  if (calBackup) corners = calBackup;
+  calBackup = null; pickLane = false;
+  endMode();
+}
+async function runAuto(target) {
+  const src = freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame();
+  if (!src) return;
+  calPanel.classList.add('busy');
+  const r = await proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
+  calPanel.classList.remove('busy');
+  pickLane = false;
+  if (r.corners) { corners = r.corners; buzz(); toast(t('cal.autoOk'), 'ok'); }
+  else toast(t('cal.autoFail'), 'bad');
+  placeHandles(); calbar(true); requestDraw();
 }
 function placeHandles() {
   handles.forEach(x => x.remove()); handles = [];
-  if (mode !== 'calib') return;
+  if (mode !== 'calib' && !(mode === 'wizard' && wiz?.step === 2)) return;
   const R = viewRect();
   corners.forEach((c, i) => {
     const [x, y] = toScreen(c[0], c[1], R);
@@ -206,6 +230,7 @@ async function finishCalib() {
   if (corners.length !== 4) { toast(t('cal.hint', { p: '4' })); return; }
   localStorage.setItem(CAL_KEY, JSON.stringify(corners));
   await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
+  calBackup = null; pickLane = false;
   endMode();
   if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = 0; await new Promise(r => { video.onseeked = r; }); runFile(f); }
 }
@@ -219,14 +244,113 @@ async function calibrateNow(bmp) {
   } else toast(r.message || 'Fehler', 'bad');
 }
 
+
+// ---------- Einrichtungs-Assistent ----------
+function startWizard() {
+  endMode();
+  mode = 'wizard';
+  calBackup = corners.length === 4 ? corners.map(c => [...c]) : null;
+  wiz = { step: 1, timer: 0, preview: null, stable: 0, target: null, busy: false };
+  dock.style.display = 'none'; shotCard.classList.add('hidden');
+  wizGo(1);
+}
+function wizGo(step) {
+  if (!wiz) return;
+  clearInterval(wiz.timer);
+  wiz.step = step;
+  handles.forEach(x => x.remove()); handles = [];
+  if (step === 1) {
+    unfreeze();
+    wiz.stable = 0; wiz.preview = null;
+    wiz.timer = setInterval(wizScan, 650);
+    wizScan();
+  }
+  if (step === 2) placeHandles();
+  if (step !== 2 && step !== 1) unfreeze();
+  renderWizard(); requestDraw();
+}
+async function wizScan() {
+  if (!wiz || wiz.step !== 1 || wiz.busy) return;
+  const bmp = await grabFrame();
+  if (!bmp || !wiz) return;
+  wiz.busy = true;
+  const r = await proc.request(bmp, { auto: { target: wiz.target, yTop: topLineY(S.get('topLine')) } });
+  if (!wiz) return;
+  wiz.busy = false;
+  if (r.corners) {
+    const prev = wiz.preview;
+    const same = prev && r.corners.every((c, i) => Math.hypot(c[0] - prev[i][0], c[1] - prev[i][1]) < 0.025);
+    wiz.stable = same ? wiz.stable + 1 : 1;
+    wiz.preview = r.corners;
+  } else { wiz.stable = 0; wiz.preview = null; }
+  updateWizState(); requestDraw();
+}
+function renderWizard() {
+  if (!wiz) return;
+  const st = wiz.step;
+  const dots = h('div.wiz-dots', null, [1, 2, 3, 4].map(i => h('i' + (i < st ? '.done' : i === st ? '.on' : ''))));
+  const head = h('div.cal-head', null, h('div', null, h('b', null, t('wiz.t' + st)), dots), h('button.iconbtn', { onclick: wizCancel, 'aria-label': t('btn.cancel') }, icon('close')));
+  calPanel.innerHTML = '';
+  calPanel.append(head);
+  if (st === 1) {
+    wiz.stateEl = h('div.lane-state', null, h('i.dot'), h('span'));
+    wiz.nextEl = h('button.pillbtn.primary.big', { onclick: async () => { if (!wiz.preview) return; await doFreeze(); corners = wiz.preview.map(c => [...c]); wizGo(2); } }, icon('check'), t('wiz.next'));
+    calPanel.append(h('p.cal-msg', null, t('wiz.m1')), wiz.stateEl,
+      h('div.cal-actions', null,
+        h('button.pillbtn', { onclick: () => { wizCancel(); startCalib(); } }, icon('hand'), t('btn.manual')), wiz.nextEl));
+    updateWizState();
+  } else if (st === 2) {
+    calPanel.append(h('p.cal-msg', null, t('wiz.m2')),
+      h('div.cal-actions', null,
+        h('button.pillbtn', { onclick: () => wizGo(1) }, icon('reset'), t('wiz.again')),
+        h('button.pillbtn.primary.big', { onclick: async () => {
+          localStorage.setItem(CAL_KEY, JSON.stringify(corners));
+          await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
+          calBackup = null;
+          wizGo(state.bowler?.ballColor ? 4 : 3);
+        } }, icon('check'), t('wiz.fits'))));
+  } else if (st === 3) {
+    calPanel.append(h('p.cal-msg', null, t('wiz.m3')),
+      h('div.cal-actions', null,
+        h('button.pillbtn', { onclick: () => wizGo(4) }, t('wiz.skip'))));
+  } else {
+    const bc = state.bowler?.ballColor?.rgb;
+    calPanel.append(h('p.cal-msg', null, t('wiz.m4')),
+      h('div.lane-state.ok', null, h('i.dot'), t('wiz.ready'), bc ? h('span.swatch', { style: { background: `rgb(${bc})`, marginLeft: 'auto' } }) : null),
+      h('div.cal-actions', null,
+        h('button.pillbtn', { onclick: () => wizGo(3) }, icon('ball'), t('btn.ball')),
+        h('button.pillbtn.primary.big', { onclick: () => {
+          if (paused) togglePause();
+          endMode(); setStatus('st.idle', 'ok'); buzz(40); toast(t('wiz.go'), 'ok');
+          if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = 0; video.onseeked = () => { video.onseeked = null; runFile(f); }; }
+        } }, icon('play'), t('btn.start'))));
+  }
+  calPanel.style.display = 'block';
+}
+function updateWizState() {
+  if (!wiz || wiz.step !== 1 || !wiz.stateEl) return;
+  const ok = wiz.stable >= 2;
+  wiz.stateEl.className = 'lane-state' + (ok ? ' ok' : '');
+  wiz.stateEl.lastChild.textContent = ok ? t('wiz.found') : wiz.preview ? t('wiz.hold') : t('wiz.search');
+  wiz.nextEl.disabled = !wiz.preview;
+}
+function wizCancel() {
+  if (calBackup) corners = calBackup;
+  calBackup = null;
+  endMode();
+}
+
 // ---------- Kugelfarbe ----------
 async function startBall() {
   endMode();
   mode = 'ball';
   $('#b-ball').classList.add('on');
   await doFreeze();
-  const el = h('div.calbar', null, t('ball.hint'), h('div.row', { style: { justifyContent: 'center', marginTop: '6px' } }, h('button', { onclick: endMode }, t('btn.cancel'))));
-  root.append(el);
+  dock.style.display = 'none'; shotCard.classList.add('hidden');
+  calPanel.innerHTML = '';
+  calPanel.append(h('div.cal-head', null, h('b', null, t('btn.ball')), h('button.iconbtn', { onclick: endMode, 'aria-label': t('btn.cancel') }, icon('close'))),
+    h('p.cal-msg', null, t('ball.hint')), h('div.cal-actions', null, h('button.pillbtn', { onclick: endMode }, t('btn.cancel'))));
+  calPanel.style.display = 'block';
 }
 async function sampleBall(nx, ny) {
   const src = freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame();
@@ -238,22 +362,33 @@ async function sampleBall(nx, ny) {
     await saveBowler(state.bowler);
     syncBall();
     toast(t('ball.ok'), 'ok'); buzz();
-    endMode();
+    if (mode !== 'wizard') endMode();
   } else toast(t('ball.none'), 'bad');
 }
 
 function endMode() {
+  if (wiz) { clearInterval(wiz.timer); wiz = null; }
   mode = 'live';
-  calbar(false); $('.calbar', root)?.remove();
+  calbar(false);
   handles.forEach(x => x.remove()); handles = [];
-  $('#b-cal')?.classList.remove('on'); if ($('#b-cal')) $('#b-cal').textContent = t('btn.calib');
   $('#b-ball')?.classList.remove('on');
   loupe.style.display = 'none';
+  dock.style.display = ''; shotCard.classList.remove('hidden');
   unfreeze(); requestDraw();
 }
 
 function onPointerDown(e) {
-  if (mode === 'calib' && corners.length < 4) {
+  if (mode === 'wizard') {
+    const n = toNorm(e.clientX, e.clientY);
+    if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
+    if (wiz.step === 1) { wiz.target = n; wiz.stable = 0; wiz.preview = null; updateWizState(); requestDraw(); toast(t('wiz.targetSet')); }
+    else if (wiz.step === 3) sampleBall(...n).then(() => { if (mode === 'wizard') wizGo(4); });
+    return;
+  }
+  if (mode === 'calib' && pickLane) {
+    const n = toNorm(e.clientX, e.clientY);
+    if (n[0] >= 0 && n[0] <= 1 && n[1] >= 0 && n[1] <= 1) runAuto(n);
+  } else if (mode === 'calib' && corners.length < 4) {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
     corners.push(n); placeHandles(); calbar(true); requestDraw();
@@ -300,24 +435,36 @@ async function handleEvent(ev) {
 function showShotCard(shot) {
   const an = shot.an;
   shotCard.innerHTML = '';
-  const cv = h('canvas');
-  const knocked = shot.pinsAfter ? shot.pinsBefore.length - shot.pinsAfter.length : '–';
-  shotCard.append(cv, h('div.metrics', null,
-    h('div', null, h('small', null, t('m.speed')), h('b', null, an ? speedStr(an.speedAvg) : '–')),
-    h('div', null, h('small', null, t('m.entryAngle')), h('b', null, an && an.entryAngle != null ? fmt(an.entryAngle, 1) + '°' : '–')),
-    h('div', null, h('small', null, t('m.entryBoard')), h('b', null, an ? fmt(an.entryBoard, 1) : '–')),
-    h('div', null, h('small', null, t('m.boardArrows')), h('b', null, an ? fmt(an.boardArrows, 1) : '–')),
-    h('div', null, h('small', null, t('m.breakpoint')), h('b', null, an?.breakpoint ? fmt(an.breakpoint.board, 1) : '–')),
-    h('div', null, h('small', null, t('m.pins')), h('b', null, knocked, ' ', pinMini(shot.pinsBefore, shot.pinsAfter)))),
-  h('div.row', { style: { gridColumn: '1 / -1', justifyContent: 'flex-end', gap: '6px' } },
-    h('button', { onclick: async (e) => { e.stopPropagation(); const v = await pinPadSheet(shot.pinsBefore, shot.pinsAfter ?? shot.pinsBefore, shot.pinDetail); if (v) { shot.pinsAfter = v; shot.pinsManual = true; await updateShot(shot); syncPins(); showShotCard(shot); updateTop(); } } }, t('h.editPins')),
-    h('button', { onclick: async (e) => { e.stopPropagation(); await deleteShot(shot); lastShot = null; shotCard.style.display = 'none'; syncPins(); updateTop(); toast(t('btn.undo')); } }, '↶ ' + t('btn.undo'))));
-  shotCard.style.display = 'grid';
-  requestAnimationFrame(() => miniLane(cv, an, { exag: 5, pinsBefore: shot.pinsBefore, pinsAfter: shot.pinsAfter }));
+  const cv = h('canvas.sc-lane');
+  const knocked = shot.pinsAfter ? shot.pinsBefore.length - shot.pinsAfter.length : null;
+  const pocket = an ? an.pocket : null;
+  const stat = (label, val, unit) => h('div.sc-stat', null, h('small', null, label), h('b', null, val, unit ? h('i', null, unit) : null));
+  const sp = an ? speedStr(an.speedAvg).split(' ') : ['–'];
+  shotCard.append(
+    h('div.sc-head', null,
+      h('b', null, t('h.frameShort', { f: shot.frame, b: shot.ball })),
+      pocket ? h('span.badge.' + pocket, null, t('pocket.' + pocket)) : null,
+      knocked != null ? h('span.badge.pins', null, knocked === shot.pinsBefore.length ? (shot.ball === 1 ? 'Strike' : 'Spare') : knocked + ' ' + (knocked === 1 ? 'Pin' : t('m.pins'))) : null,
+      h('span.spacer'),
+      h('button.iconbtn', { onclick: (e) => { e.stopPropagation(); shotCard.classList.add('closed'); }, 'aria-label': t('btn.close') }, icon('close'))),
+    cv,
+    h('div.sc-stats', null,
+      stat(t('m.speed'), sp[0], sp[1]),
+      stat(t('m.angleShort'), an && an.entryAngle != null ? fmt(an.entryAngle, 1) : '–', '°'),
+      stat(t('m.boardShort'), an ? fmt(an.entryBoard, 1) : '–'),
+      stat(t('m.breakpoint'), an?.breakpoint ? fmt(an.breakpoint.board, 1) : '–')),
+    h('div.sc-foot', null,
+      pinMini(shot.pinsBefore, shot.pinsAfter),
+      h('span.spacer'),
+      h('button.pillbtn.sm', { onclick: async (e) => { e.stopPropagation(); const v = await pinPadSheet(shot.pinsBefore, shot.pinsAfter ?? shot.pinsBefore, shot.pinDetail); if (v) { shot.pinsAfter = v; shot.pinsManual = true; await updateShot(shot); syncPins(); showShotCard(shot); updateTop(); } } }, icon('pins'), t('m.pins')),
+      h('button.pillbtn.sm', { onclick: async (e) => { e.stopPropagation(); await deleteShot(shot); lastShot = null; shotCard.style.display = 'none'; syncPins(); updateTop(); toast(t('btn.undo')); } }, icon('undo'), t('btn.undo'))));
+  shotCard.classList.remove('closed');
+  shotCard.style.display = '';
+  requestAnimationFrame(() => miniLane(cv, an, { exag: 3, pinsBefore: shot.pinsBefore, pinsAfter: shot.pinsAfter, ballColor: state.bowler?.ballColor?.rgb ? `rgb(${state.bowler.ballColor.rgb})` : null }));
 }
 
 function setStatus(key, cls) {
-  statusPill.className = 'pill ' + cls;
+  statusPill.className = 'chip status ' + cls;
   statusPill.lastChild.textContent = t(key);
 }
 function updateTop() {
@@ -325,10 +472,13 @@ function updateTop() {
   const pos = currentPosition();
   const g = buildGame(gameShots());
   framePill.innerHTML = '';
-  framePill.append(t('h.game', { n: state.game }), ' · ', h('b', null, t('h.frame', { f: pos.frame })), ' · ', t('h.ball', { b: pos.ball }), g.total ? ' · ' + g.total : '');
+  framePill.append(h('small', null, t('h.game', { n: state.game })), h('b', null, t('h.frameShort', { f: pos.frame, b: pos.ball })), g.total ? h('span.score-badge', null, g.total) : '');
   bowlerPill.innerHTML = '';
   const bc = state.bowler?.ballColor?.rgb;
-  bowlerPill.append(bc ? h('span.swatch', { style: { background: `rgb(${bc})`, width: '14px', height: '14px' } }) : '', ' ', state.bowler?.name || '');
+  const name = state.bowler?.name || '?';
+  bowlerPill.style.setProperty('--ring', bc ? `rgb(${bc})` : 'var(--line)');
+  bowlerPill.append(name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase());
+  bowlerPill.title = name;
 }
 function showGame() {
   const g = buildGame(gameShots());
@@ -344,9 +494,18 @@ function updateHud() {
 function togglePause() {
   paused = !paused;
   proc?.setPaused(paused);
-  $('#b-run').textContent = paused ? t('btn.start') : t('btn.pause');
+  const b = $('#b-run'); b.innerHTML = ''; b.append(icon(paused ? 'play' : 'pause')); b.classList.toggle('paused', paused);
   if (fileMode) { fileStop = paused; }
   setStatus(paused ? 'st.paused' : 'st.idle', paused ? '' : 'ok');
+}
+async function moreMenu() {
+  const item = (val, ic, label, sub) => ({ value: val, label, icon: ic, sub });
+  const v = await sheet(t('btn.more'), null, [], { menu: [
+    item('file', 'video', t('btn.file'), t('file.short')),
+    item('game', 'pins', t('h.scorecard')),
+    item('fs', 'expand', t('btn.fullscreen')),
+  ] });
+  if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
 }
 function toggleFullscreen() {
   const d = document;
@@ -392,7 +551,7 @@ async function openVideoUrl(url, q) {
   }
   if (q.get('corners')) corners = JSON.parse(q.get('corners'));
   if (corners.length === 4) await calibrateNow();
-  else { pendingFps = fps; await startCalib(); return; }
+  else { pendingFps = fps; S.get('autoWizard') ? startWizard() : await startCalib(); return; }
   await runFile(fps);
 }
 async function runFile(fps) {
@@ -417,7 +576,14 @@ function draw() {
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, R.sw, R.sh);
   const S2 = (nx, ny) => toScreen(nx, ny, R);
-  if (mode === 'calib') {
+  if (mode === 'wizard' && wiz?.step === 1 && wiz.preview) {
+    const ok = wiz.stable >= 2, q = wiz.preview;
+    c.fillStyle = ok ? 'rgba(16,185,129,.18)' : 'rgba(245,158,11,.14)';
+    c.strokeStyle = ok ? '#10b981' : '#f59e0b'; c.lineWidth = 3;
+    c.beginPath(); [0, 1, 3, 2].forEach((i, k) => { const p = S2(...q[i]); k ? c.lineTo(...p) : c.moveTo(...p); }); c.closePath(); c.fill(); c.stroke();
+    return;
+  }
+  if (mode === 'calib' || (mode === 'wizard' && wiz?.step === 2)) {
     if (corners.length >= 2) {
       const order = [0, 1, 3, 2].filter(i => i < corners.length);
       c.strokeStyle = '#2f6fed'; c.lineWidth = 2; c.setLineDash([6, 4]);

@@ -4,7 +4,7 @@ import { cameraFromH, mul } from './vision/geometry.js';
 import { interpX } from './analysis.js';
 
 const COL = { lane: '#e9cf9f', lane2: '#dcbd86', board: 'rgba(120,80,30,.16)', gutter: '#8b9099', cap: '#c9ced6', deck: '#f2e3c4',
-  pit: '#2b2f36', approach: '#f3e2bd', foul: '#c0392b', arrow: '#6b4a22', path: '#e4572e', cmp: 'rgba(40,60,90,.28)', ball: '#2f6fed', bp: '#16a34a' };
+  pit: '#2b2f36', approach: '#f3e2bd', foul: '#c0392b', arrow: '#6b4a22', path: '#e4572e', cmp: 'rgba(40,60,90,.28)', ball: '#4f46e5', bp: '#10b981' };
 
 function pinRadiusAt(z) { // vereinfachtes Profil für Zeichnung
   const t = z / PIN_H;
@@ -262,7 +262,7 @@ export class Replay {
 // kleine statische Mini-Bahn (für Listen)
 export function miniLane(canvas, an, opts = {}) {
   const r = new Replay(canvas);
-  r.exag = opts.exag || 5; r.cmp = opts.cmp || [];
+  r.exag = opts.exag || 5; r.cmp = opts.cmp || []; if (opts.ballColor) r.ballColor = opts.ballColor;
   r.set({ points: [], pinsBefore: opts.pinsBefore || PIN_IDS, pinsAfter: opts.pinsAfter || null, tStart: 0, tImpact: 1 }, an, { p: 1 });
   return r;
 }
