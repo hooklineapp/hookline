@@ -2,6 +2,7 @@
 import { LANE_W, GUTTER_W, HEADPIN_Y, PIT_Y, BOARD_W, PINS, PIN_IDS, ARROWS, DOTS, BALL_R, PIN_H, xOfBoard } from './lane.js';
 import { cameraFromH, mul } from './vision/geometry.js';
 import { interpX } from './analysis.js';
+import { simulatePins, simAt } from './pinsim.js';
 
 const COL = { lane: '#e9cf9f', lane2: '#dcbd86', board: 'rgba(120,80,30,.16)', gutter: '#8b9099', cap: '#c9ced6', deck: '#f2e3c4',
   pit: '#2b2f36', approach: '#f3e2bd', foul: '#c0392b', arrow: '#6b4a22', path: '#e4572e', cmp: 'rgba(40,60,90,.28)', ball: '#4f46e5', bp: '#10b981' };
@@ -29,6 +30,11 @@ export class Replay {
     this.t0 = shot.tStart ?? (pts[0] ? pts[0][0] : 0);
     this.t1 = shot.tImpact ?? (pts.length ? pts[pts.length - 1][0] : 1);
     if (!(this.t1 > this.t0)) this.t1 = this.t0 + 2.5;
+    // Pin-Simulation (optional): startet kurz vor dem Einschlag
+    this.sim = this.pinSim ? simulatePins(shot, an) : null;
+    const vImp = Math.max(3, an?.speedImpact || an?.speedAvg || 7.5);
+    this.tSim = this.t1 - 0.45 / vImp;
+    this.tail = this.sim ? 1.6 : 1.2;
     this.p = opts.p ?? 1;
     this.draw();
   }
@@ -43,7 +49,7 @@ export class Replay {
     if (this.p >= 1) this.p = 0;
     this.playing = true;
     let last = performance.now();
-    const dur = (this.t1 - this.t0) + 1.2; // +Pins
+    const dur = (this.t1 - this.t0) + (this.tail || 1.2); // +Pins
     const step = (now) => {
       if (!this.playing) return;
       this.p = Math.min(1, this.p + (now - last) / 1000 * this.speed / dur); last = now;
@@ -74,8 +80,12 @@ export class Replay {
   }
 
   _state() {
-    const dur = (this.t1 - this.t0) + 1.2;
+    const dur = (this.t1 - this.t0) + (this.tail || 1.2);
     const t = this.t0 + this.p * dur;
+    if (this.sim && t >= this.tSim) {
+      const S = simAt(this.sim, t - this.tSim);
+      return { t, y: S.ball.y, x: S.ball.x, rolling: !S.ball.pit, pinsFallen: false, fade: 0, sim: S };
+    }
     const rolling = t <= this.t1;
     const y = rolling ? this.yAt(t) : HEADPIN_Y;
     const path = this.an?.path || [];
@@ -157,6 +167,27 @@ export class Replay {
   }
   _pinsTop(P, sx, sy, st) {
     const ctx = this.ctx;
+    if (st.sim) {
+      const r = Math.max(3.5, 0.06 * Math.min(sx, sy * 3));
+      for (const [id, p] of Object.entries(st.sim.pins)) {
+        const a = P(p.x, p.y);
+        if (p.tilt > 0.01) { // liegender Pin als Kapsel in Fallrichtung
+          const L = 0.38 * p.tilt, e = P(p.x + Math.sin(p.fdir) * L, p.y + Math.cos(p.fdir) * L);
+          ctx.strokeStyle = '#cfd4dc'; ctx.lineCap = 'round'; ctx.lineWidth = r * 1.5;
+          ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(e[0], e[1]); ctx.stroke();
+          ctx.strokeStyle = '#c0392b'; ctx.lineWidth = r * 0.5;
+          const m = P(p.x + Math.sin(p.fdir) * L * 0.7, p.y + Math.cos(p.fdir) * L * 0.7);
+          ctx.beginPath(); ctx.moveTo(m[0], m[1]); ctx.lineTo(m[0] + 0.01, m[1] + 0.01); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.arc(a[0], a[1], r, 0, 7);
+          ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        void id;
+      }
+      ctx.fillStyle = 'rgba(79,70,229,.85)'; ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillText(this.simLabel || 'Simulation', 8, 16);
+      return;
+    }
     const before = new Set(this.shot.pinsBefore || PIN_IDS);
     const after = this.shot.pinsAfter ? new Set(this.shot.pinsAfter) : null;
     const r = Math.max(3.5, 0.06 * Math.min(sx, sy * 3));
@@ -186,6 +217,19 @@ export class Replay {
     const P = (X, Y, Z = 0) => { const p = C.P(X, Y, Z); return [p[0] + ox, p[1] + oy, p[2]]; };
     ctx.save();
     ctx.beginPath(); ctx.rect(ox, oy, vw, vh); ctx.clip();
+    // beim Einschlag weich auf das Pindeck zoomen (Pins sind im Originalbild nur wenige Pixel groß)
+    const st0 = this._state();
+    if (this.pinZoom && st0.sim) {
+      const k = Math.min(1, (st0.t - this.tSim) / 0.35), e = k * k * (3 - 2 * k);
+      const a0 = P(0, HEADPIN_Y, 0), a1 = P(LANE_W, HEADPIN_Y, 0);
+      const zMax = Math.max(1, Math.min(12, 0.5 * vw / (Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1)));
+      const z = 1 + (zMax - 1) * e;
+      const hp = P(LANE_W / 2, HEADPIN_Y + 0.4, 0.12);
+      const cx = ox + vw / 2, cy = oy + vh * 0.55;
+      // Ankerpunkt wandert vom Kopfpin in die Bildmitte, dabei wird vergrößert
+      const px = hp[0] + (cx - hp[0]) * e, py = hp[1] + (cy - hp[1]) * e;
+      ctx.translate(px, py); ctx.scale(z, z); ctx.translate(-hp[0], -hp[1]);
+    }
     const g = ctx.createLinearGradient(0, oy, 0, oy + vh); g.addColorStop(0, '#3a3f48'); g.addColorStop(1, '#5a606b');
     ctx.fillStyle = g; ctx.fillRect(ox, oy, vw, vh);
     const quad = (x0, y0, x1, y1, fill, z = 0) => {
@@ -223,7 +267,9 @@ export class Replay {
     // Pins (hinten zuerst) + Kugel nach Tiefe sortiert
     const before = new Set(this.shot.pinsBefore || PIN_IDS);
     const after = this.shot.pinsAfter ? new Set(this.shot.pinsAfter) : null;
-    const items = PIN_IDS.filter(id => before.has(id)).map(id => ({ id, d: P(...PINS[id])[2] }));
+    const simP = st.sim ? st.sim.pins : null;
+    const pinPos = (id) => simP && simP[id] ? [simP[id].x, simP[id].y] : PINS[id];
+    const items = PIN_IDS.filter(id => before.has(id)).map(id => ({ id, d: P(...pinPos(id))[2] }));
     if (st.rolling) items.push({ ball: true, d: P(st.x, st.y, BALL_R)[2] });
     items.sort((a, b) => b.d - a.d);
     for (const it of items) {
@@ -233,22 +279,34 @@ export class Replay {
         ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(c[0] - r * 0.3, c[1] - r * 0.35, Math.max(1, r * 0.3), 0, 7); ctx.fill();
         continue;
       }
-      const [X, Y] = PINS[it.id];
+      const [X, Y] = pinPos(it.id);
       let a = 1;
-      if (st.pinsFallen && after && !after.has(it.id)) a = 1 - st.fade;
+      if (!simP && st.pinsFallen && after && !after.has(it.id)) a = 1 - st.fade;
       if (a <= 0.02) continue;
       ctx.globalAlpha = a;
+      // Pinachse: aufrecht oder in Fallrichtung gekippt
+      const sp = simP ? simP[it.id] : null;
+      const tl = sp ? sp.tilt * Math.PI / 2 * 0.97 : 0, fd = sp ? sp.fdir : 0;
+      const ax = [Math.sin(fd) * Math.sin(tl), Math.cos(fd) * Math.sin(tl), Math.cos(tl)];
       const steps = 14; const L = [], R = [];
       for (let s = 0; s <= steps; s++) {
-        const z = PIN_H * s / steps, p = P(X, Y, z), r = pinRadiusAt(z) * C.f / p[2];
-        L.push([p[0] - r, p[1]]); R.push([p[0] + r, p[1]]);
+        const z = PIN_H * s / steps;
+        const p = P(X + ax[0] * z, Y + ax[1] * z, ax[2] * z + (tl > 0.05 ? 0.06 * Math.sin(tl) : 0));
+        const q = P(X + ax[0] * (z + 0.01), Y + ax[1] * (z + 0.01), ax[2] * (z + 0.01));
+        let nx = -(q[1] - p[1]), ny = q[0] - p[0]; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        if (tl < 0.05) { nx = 1; ny = 0; }
+        const r = pinRadiusAt(z) * C.f / p[2];
+        L.push([p[0] - nx * r, p[1] - ny * r]); R.push([p[0] + nx * r, p[1] + ny * r]);
       }
       ctx.fillStyle = '#fbfbf8'; ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 0.6;
       ctx.beginPath(); L.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); R.reverse().forEach(p => ctx.lineTo(p[0], p[1])); ctx.closePath(); ctx.fill(); ctx.stroke();
-      const n = P(X, Y, PIN_H * 0.7), rn = 0.032 * C.f / n[2];
-      ctx.fillStyle = '#d33'; ctx.fillRect(n[0] - rn, n[1] - Math.max(0.6, rn * 0.25), 2 * rn, Math.max(0.8, rn * 0.35));
+      if (tl < 0.05) {
+        const n = P(X, Y, PIN_H * 0.7), rn = 0.032 * C.f / n[2];
+        ctx.fillStyle = '#d33'; ctx.fillRect(n[0] - rn, n[1] - Math.max(0.6, rn * 0.25), 2 * rn, Math.max(0.8, rn * 0.35));
+      }
       ctx.globalAlpha = 1;
     }
+    if (st.sim) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.fillText(this.simLabel || 'Simulation', ox + 8, oy + 16); }
     ctx.restore();
   }
   _polyCam(path, P) {

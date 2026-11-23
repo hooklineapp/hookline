@@ -1,15 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- vereinfachte Variante für kleine Größen (Tab, Favicon): Pin, Kugel, Bogen, Pfeile unten -->
-  <rect width="64" height="64" rx="14" fill="#ffffff"/>
-  <path d="M19 7c-4 0-6 4-6 8 0 5 2 7 2 11 0 4-6 10-6 19 0 5 1.5 7.5 3 9h14c1.5-1.5 3-4 3-9 0-9-6-15-6-19 0-4 2-6 2-11 0-4-2-8-6-8z" fill="#fff" stroke="#111" stroke-width="3" stroke-linejoin="round"/>
-  <path d="M14.5 20h9M14.5 24.5h9" stroke="#e11d2e" stroke-width="3"/>
-  <path d="M51 29C51 20 45 14 37 14C32 14 28 17 26 21" fill="none" stroke="#1d5bff" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="4.5 4"/>
-  <circle cx="44" cy="43" r="12" fill="#111"/>
-  <circle cx="39.5" cy="38" r="2.1" fill="#fff"/><circle cx="37" cy="42.5" r="1.9" fill="#fff"/>
-  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M10 54L5 58M5 54.5V58h3.5" stroke="#fff" stroke-width="5"/>
-    <path d="M10 54L5 58M5 54.5V58h3.5" stroke="#111" stroke-width="2.6"/>
-    <path d="M54 55L59 58.5M55.5 58.5H59V55" stroke="#fff" stroke-width="5"/>
-    <path d="M54 55L59 58.5M55.5 58.5H59V55" stroke="#111" stroke-width="2.6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Fassung für 16–64 px: gleiche Formen, kräftigere Striche, ohne Achsen und kleine Ziffern -->
+  <defs>
+    <path id="pin" d="M262 120C318 120 354 160 354 220C354 280 318 304 312 352C304 432 410 530 410 660C410 770 378 846 356 880Q348 892 334 892H190Q176 892 168 880C146 846 114 770 114 660C114 530 220 432 212 352C206 304 170 280 170 220C170 160 206 120 262 120Z"/>
+    <clipPath id="pinClip"><use href="#pin"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#ffffff"/>
+  <use href="#pin" fill="#ffffff"/>
+  <g clip-path="url(#pinClip)" fill="#e3202f"><rect x="100" y="318" width="320" height="52"/></g>
+  <use href="#pin" fill="none" stroke="#111111" stroke-width="44" stroke-linejoin="round"/>
+  <path d="M810 500C820 410 780 330 700 296C620 262 520 268 468 318" fill="none" stroke="#1a56ff" stroke-width="44" stroke-linecap="round" stroke-dasharray="62 58"/>
+  <circle cx="712" cy="704" r="206" fill="#111111"/>
+  <ellipse cx="650" cy="580" rx="34" ry="24" fill="#ffffff" transform="rotate(-28 650 580)"/>
+  <ellipse cx="584" cy="652" rx="25" ry="34" fill="#ffffff" transform="rotate(-12 584 652)"/>
+  <g fill="none" stroke="#111111" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M108 852L72 878M80 820L66 886L130 894"/>
+    <path d="M926 822L962 848M952 790L968 856L906 864"/>
   </g>
 </svg>

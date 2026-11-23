@@ -84,6 +84,8 @@ export const SCHEMA = [
   S('showPins', 'bool', true, { group: 'display' , basic: true }),
   S('showHud', 'bool', true, { group: 'display' , basic: true }),
   S('debug', 'bool', false, { group: 'display', engine: true }),
+  S('pinSim', 'bool', true, { group: 'display', basic: true }),
+  S('pinZoom', 'bool', true, { group: 'display', basic: true }),
   S('replaySpeed', 'select', '1', { group: 'display', options: ['0.25', '0.5', '1', '2'] , basic: true }),
   S('replayWidth', 'range', 4, { group: 'display', min: 1, max: 10, step: 0.5 }),
   S('replayMode', 'select', 'top', { group: 'display', options: ['top', 'camera', 'split'] , basic: true }),

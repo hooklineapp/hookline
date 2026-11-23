@@ -1,31 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#ffffff"/>
-  <!-- Achse nach oben + Gabel -->
-  <g stroke="#111" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M262 262V82M236 108l26-26 26 26"/>
-    <path d="M262 262l-50 40M262 262l24 20"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <path id="pin" d="M268 140C318 140 352 176 352 229C352 281 319 302 313 346C306 421 403 521 403 650C403 760 370 838 349 870Q342 882 329 882H207Q194 882 187 870C166 838 133 760 133 650C133 521 230 421 223 346C217 302 184 281 184 229C184 176 218 140 268 140Z"/>
+    <clipPath id="pinClip"><use href="#pin"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#ffffff"/>
+
+  <!-- Koordinatenachsen -->
+  <g fill="none" stroke="#111111" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M515 505V152M478 189L515 152L552 189"/>
+    <path d="M515 505L430 571M515 505L556 538"/>
   </g>
-  <!-- Pin (etwas schlanker, damit die Pfeile unten frei bleiben) -->
-  <path d="M140 72c-28 0-41 28-41 58 0 36 15 55 15 83 0 30-43 77-43 150 0 40 11 66 22 78h94c11-12 22-38 22-78 0-73-43-120-43-150 0-28 15-47 15-83 0-30-13-58-41-58z"
-        fill="#fff" stroke="#111" stroke-width="15" stroke-linejoin="round"/>
-  <path d="M112 158h56M110 186h60" stroke="#e11d2e" stroke-width="15"/>
-  <text x="140" y="380" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="88" fill="#111">1</text>
-  <!-- Bogen mit Ziel -->
-  <path d="M404 244C404 188 362 136 304 132C264 129 224 150 204 188" fill="none" stroke="#1d5bff" stroke-width="13" stroke-linecap="round" stroke-dasharray="20 18"/>
-  <path d="M196 166l4 32 30-8" fill="none" stroke="#1d5bff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-  <g stroke="#1d5bff" stroke-width="10" stroke-linecap="round" fill="none">
-    <circle cx="366" cy="158" r="20"/><path d="M366 126v14M366 176v14M334 158h14M384 158h14"/>
+
+  <!-- Pin -->
+  <use href="#pin" fill="#ffffff"/>
+  <g clip-path="url(#pinClip)" fill="#e3202f">
+    <rect x="120" y="322" width="300" height="30"/>
+    <rect x="120" y="398" width="300" height="34"/>
   </g>
-  <!-- Kugel -->
-  <circle cx="352" cy="352" r="92" fill="#111"/>
-  <ellipse cx="318" cy="304" rx="13" ry="10" fill="#fff" transform="rotate(-30 318 304)"/>
-  <ellipse cx="292" cy="334" rx="11" ry="14" fill="#fff" transform="rotate(-20 292 334)"/>
-  <text x="366" y="388" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="92" fill="#fff">0</text>
-  <!-- Pfeile unten links und rechts: zuletzt gezeichnet, mit weißem Rand, damit sie immer frei sichtbar sind -->
-  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M78 430L38 462M38 434v28h28" stroke="#fff" stroke-width="27"/>
-    <path d="M78 430L38 462M38 434v28h28" stroke="#111" stroke-width="13"/>
-    <path d="M430 438L472 466M444 466h28v-28" stroke="#fff" stroke-width="27"/>
-    <path d="M430 438L472 466M444 466h28v-28" stroke="#111" stroke-width="13"/>
+  <use href="#pin" fill="none" stroke="#111111" stroke-width="22" stroke-linejoin="round"/>
+  <!-- Ziffer 1 im Pin -->
+  <path d="M293 584V716H261V627L231 643V611L267 584Z" fill="#111111"/>
+
+  <!-- Flugbahn: gestrichelter Bogen mit Zielkreuz -->
+  <path d="M800 498C808 420 780 352 722 320C652 282 544 262 472 300C432 322 402 360 384 404" fill="none" stroke="#1a56ff" stroke-width="20" stroke-linecap="round" stroke-dasharray="32 30"/>
+  <path d="M371 356L380 412L436 401" fill="none" stroke="#1a56ff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="722" cy="318" r="40" fill="#ffffff"/>
+  <g fill="none" stroke="#1a56ff" stroke-width="15" stroke-linecap="round">
+    <circle cx="722" cy="318" r="26"/>
+    <path d="M722 268V284M722 352V368M672 318H688M756 318H772"/>
+  </g>
+  <!-- kleine Ziffern 1 und 0 an der Bahn -->
+  <path d="M780 228V280H765V245L752 251V237L768 228Z" fill="#111111"/>
+  <ellipse cx="422" cy="466" rx="16" ry="24" fill="none" stroke="#111111" stroke-width="12"/>
+
+  <!-- Kugel mit Ziffer 0 -->
+  <circle cx="705" cy="700" r="192" fill="#111111"/>
+  <ellipse cx="650" cy="578" rx="27" ry="19" fill="#ffffff" transform="rotate(-28 650 578)"/>
+  <ellipse cx="589" cy="646" rx="20" ry="28" fill="#ffffff" transform="rotate(-12 589 646)"/>
+  <ellipse cx="710" cy="706" rx="50" ry="74" fill="none" stroke="#ffffff" stroke-width="32"/>
+
+  <!-- Pfeile unten links und rechts -->
+  <g fill="none" stroke="#111111" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M136 836L86 868M96 814L84 872L142 880"/>
+    <path d="M904 812L946 840M934 788L950 846L892 856"/>
   </g>
 </svg>
