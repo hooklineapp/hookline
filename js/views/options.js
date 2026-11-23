@@ -6,6 +6,7 @@ import * as db from '../db.js';
 import { state, setBowler, saveBowler, deleteBowler, newSession } from '../store.js';
 import { listCameras, scoreCamera } from '../camera.js';
 import { icon } from '../ui.js';
+import { mascot, mascotOn } from '../mascot.js';
 
 let root;
 export function initOptions(el) { root = el; }
@@ -126,6 +127,22 @@ async function dataCard() {
   d.append(h('div.opt', null, h('span'), h('button.danger', { onclick: async () => { if (await confirmBox(t('o.clearConfirm'))) { await db.clearAll(); location.reload(); } } }, t('o.clearAll'))));
   return d;
 }
+// Lade-Overlay beim Aktualisieren: wackelnder Pin, echter Fortschritt (Dateien der neuen Version)
+export function updateOverlay(version) {
+  const pin = mascotOn() ? mascot('happy', { cls: 'upd-pin' }) : h('div.upd-pin.upd-pin-plain', { 'aria-hidden': 'true' });
+  const bar = h('i'), pct = h('b.upd-pct', null, ''), msg = h('p.upd-msg', null, t('u.ovStart'));
+  const ov = h('div.upd-ov', { role: 'dialog', 'aria-modal': 'true', 'aria-live': 'polite', 'aria-label': t('u.ovTitle', { v: version }) },
+    h('div.upd-card', null, pin, h('h3', null, t('u.ovTitle', { v: version })), h('div.upd-bar.indet', null, bar), h('div.upd-row', null, msg, pct)));
+  document.body.append(ov);
+  return {
+    set: (p, step, m) => {
+      const bx = bar.parentElement;
+      if (p == null) { bx.classList.add('indet'); pct.textContent = ''; }
+      else { bx.classList.remove('indet'); bar.style.width = Math.round(p * 100) + '%'; pct.textContent = Math.round(p * 100) + ' %'; }
+      msg.textContent = step === 'files' && m ? t('u.ovFiles', { d: m.done, n: m.total }) : step === 'activate' ? t('u.ovActivate') : step === 'reload' ? t('u.ovReload') : t('u.ovStart');
+    },
+  };
+}
 function aboutCard() {
   const status = h('span.muted', { style: { fontSize: '13px' } }, '');
   const btn = h('button', { onclick: async () => {
@@ -137,7 +154,7 @@ function aboutCard() {
     if (!u.available) { status.textContent = t('u.current'); return; }
     status.textContent = t('u.available', { v: u.latest });
     btn.textContent = t('u.install'); btn.classList.add('primary');
-    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); await applyUpdate(u.latest); };
+    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); const ov = updateOverlay(u.latest); await applyUpdate(u.latest, ov.set); };
   } }, t('u.check'));
   const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
   return keepOpen(h('details.grp', null, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),

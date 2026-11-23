@@ -17,10 +17,15 @@ async function hardReload() {
   location.replace(location.pathname + '?u=' + Date.now() + location.hash);
 }
 
-export async function applyUpdate(latest) {
-  if (!('serviceWorker' in navigator)) { await hardReload(); return; }
+// onProgress(anteil 0..1 oder null, schritt): 'start' | 'files' | 'activate' | 'reload'
+export async function applyUpdate(latest, onProgress) {
+  const prog = (p, step, extra) => { try { onProgress?.(p, step, extra); } catch { /* */ } };
+  prog(null, 'start');
+  if (!('serviceWorker' in navigator)) { prog(1, 'reload'); await hardReload(); return; }
+  const onMsg = (e) => { const m = e.data; if (m && m.type === 'sw-progress' && m.total) prog(0.05 + 0.85 * m.done / m.total, 'files', m); };
+  navigator.serviceWorker.addEventListener('message', onMsg);
   let done = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!done) { done = true; location.reload(); } }, { once: true });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!done) { done = true; prog(1, 'reload'); location.reload(); } }, { once: true });
   let reg;
   try {
     // neuen Service Worker mit Versionsnummer registrieren -> wird garantiert frisch geladen
@@ -28,7 +33,7 @@ export async function applyUpdate(latest) {
   } catch { await hardReload(); return; }
   // nichts Neues zu installieren (Service Worker ist schon aktuell) -> direkt frisch laden
   if (!reg.installing && !reg.waiting) { try { await reg.update(); } catch { /* */ } }
-  if (!reg.installing && !reg.waiting) { await hardReload(); return; }
+  if (!reg.installing && !reg.waiting) { prog(1, 'reload'); await hardReload(); return; }
   const w = await new Promise((res) => {
     const check = () => {
       if (reg.waiting) return res(reg.waiting);
@@ -40,7 +45,7 @@ export async function applyUpdate(latest) {
     if (!check()) reg.addEventListener('updatefound', check, { once: true });
     setTimeout(() => res(reg.waiting || null), 25000);
   });
-  if (w) w.postMessage('skipWaiting');
+  if (w) { prog(0.93, 'activate'); w.postMessage('skipWaiting'); }
   else await hardReload();
   // falls der Wechsel nicht automatisch neu lädt
   setTimeout(() => { if (!done) { done = true; hardReload(); } }, 4000);
