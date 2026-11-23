@@ -1,6 +1,6 @@
 // Offline-Speicher: die App läuft immer mit der Fassung, die bereits im Browser liegt ("cache first").
 // Eine neue Fassung wird erst übernommen, wenn der Nutzer in Optionen → Info "Aktualisieren" tippt.
-const V = 'hl-v1.8.3';
+const V = 'hl-v1.8.4';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons/icon.svg', 'icons/icon-small.svg', 'icons/icon-32.png', 'icons/icon-192.png',
   'js/main.js', 'js/settings.js', 'js/i18n.js', 'js/db.js', 'js/store.js', 'js/ui.js', 'js/camera.js', 'js/processor.js',
   'js/analysis.js', 'js/scoring.js', 'js/lane.js', 'js/replay.js', 'js/pinsim.js', 'js/mascot.js', 'js/autotune.js', 'js/update.js',
@@ -8,8 +8,16 @@ const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons
   'js/views/live.js', 'js/views/history.js', 'js/views/stats.js', 'js/views/options.js', 'js/views/common.js'];
 
 self.addEventListener('install', (e) => {
-  // neue Fassung vollständig laden, aber noch nicht aktivieren (wartet auf "Aktualisieren")
-  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))));
+  // neue Fassung vollständig laden, aber noch nicht aktivieren (wartet auf "Aktualisieren").
+  // Jede Datei mit ?v=<Version> abrufen: so liefert auch der CDN-Zwischenspeicher garantiert die neue Fassung.
+  e.waitUntil((async () => {
+    const c = await caches.open(V);
+    await Promise.all(SHELL.map(async (u) => {
+      const r = await fetch(new Request(u + (u.includes('?') ? '&' : '?') + 'v=' + V, { cache: 'reload' }));
+      if (!r.ok) throw new Error('Laden fehlgeschlagen: ' + u);
+      await c.put(new Request(u), r);
+    }));
+  })());
 });
 self.addEventListener('message', (e) => { if (e.data === 'skipWaiting') self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
