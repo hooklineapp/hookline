@@ -98,7 +98,7 @@ async function startCam() {
     if (corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
   } catch (e) {
-    const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + ' (' + (e.message || e) + ')';
+    const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
     hint.style.display = 'grid'; hint.firstChild.textContent = msg + ' — ' + t('btn.file') + ' ↓';
     setStatus('st.nocam', 'bad');
   }

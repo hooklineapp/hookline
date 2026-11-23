@@ -33,7 +33,10 @@ export async function startCamera(video, opt) {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
   } catch (e) {
-    throw Object.assign(e, { code: e.name === 'NotAllowedError' ? 'denied' : 'nocam' });
+    // DOMException hat ein schreibgeschütztes "code" -> eigenes Fehlerobjekt
+    const err = new Error(e.message || e.name || 'Kamera');
+    err.code = e.name === 'NotAllowedError' || e.name === 'SecurityError' ? 'denied' : 'nocam';
+    throw err;
   }
   let track = stream.getVideoTracks()[0];
   const cams = await listCameras();
