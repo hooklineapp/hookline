@@ -3,7 +3,22 @@ import { LANE_W, GUTTER_W, HEADPIN_Y, PIT_Y, BOARD_W, PINS, PIN_IDS, ARROWS, DOT
 import { cameraFromH, mul } from './vision/geometry.js';
 import { interpX } from './analysis.js';
 import { simulatePins, simAt } from './pinsim.js';
-const SIMS = new WeakMap();
+import { simulate3DAsync, sim3dAt } from './pinsim3d.js';
+import { PIN_ZC } from './pinphys.js';
+const SIMS = new WeakMap(), SIMS3 = new WeakMap();
+let GL3 = null, GL3fail = false;   // ein WebGL-Zeichner für alle Replays (lazy)
+async function gl3() {
+  if (GL3 || GL3fail) return GL3;
+  try { const { Pin3D } = await import('./pin3d-gl.js'); GL3 = new Pin3D(); } catch { GL3fail = true; }
+  return GL3;
+}
+// 3D-Lage [x,y,z,qx,qy,qz,qw] (Schwerpunkt) -> Fußpunkt, Achse
+function poseAxis(p) {
+  const [x, y, z, qx, qy, qz, qw] = p;
+  const ax = [2 * (qx * qz + qy * qw), 2 * (qy * qz - qx * qw), 1 - 2 * (qx * qx + qy * qy)];
+  return { base: [x - ax[0] * PIN_ZC, y - ax[1] * PIN_ZC, z - ax[2] * PIN_ZC], ax };
+}
+const cssRgb = (c) => { const m = /rgb\((\d+),\s*(\d+),\s*(\d+)/.exec(c || ''); return m ? [m[1] / 255, m[2] / 255, m[3] / 255] : [0.31, 0.27, 0.9]; };
 
 const COL = { lane: '#e9cf9f', lane2: '#dcbd86', board: 'rgba(120,80,30,.16)', gutter: '#8b9099', cap: '#c9ced6', deck: '#f2e3c4',
   pit: '#2b2f36', approach: '#f3e2bd', foul: '#c0392b', arrow: '#6b4a22', path: '#e4572e', cmp: 'rgba(40,60,90,.28)', ball: '#4f46e5', bp: '#10b981' };
@@ -38,10 +53,22 @@ export class Replay {
     // Simulation beginnt dort, wo die Messung den Einschlag setzt (Kugel 0,45 m vor dem Kopfpin)
     this.tSim = this.t1;
     this.tail = this.sim ? 1.6 : 1.2;
+    // echte 3D-Physik im Hintergrund; übernimmt, sobald fertig (bis dahin 2D-Simulation)
+    this.sim3 = null;
+    if (this.sim && this.pin3d) {
+      const cached = SIMS3.get(shot);
+      if (cached) this.sim3 = cached;
+      else {
+        const last = this.sim.frames[this.sim.frames.length - 1].pins, falls = {};
+        for (const [id, q] of Object.entries(last)) falls[id] = { t: q.fall, dir: q.fdir };
+        simulate3DAsync(shot, an, this.sim.params, falls).then(r => { if (!r) return; SIMS3.set(shot, r); if (this.shot === shot) { this.sim3 = r; this.draw(); } }).catch(() => { });
+      }
+      gl3().then(g => { if (g && this.shot === shot) this.draw(); });
+    }
     this.p = opts.p ?? 1;
     this.draw();
   }
-  _simText() { return this.sim?.mixed ? (this.mixLabel || 'Messung + Simulation') : (this.simLabel || 'Simulation'); }
+  _simText() { const s = this.sim?.mixed ? (this.mixLabel || 'Messung + Simulation') : (this.simLabel || 'Simulation'); return this.sim3 ? s + ' · 3D' : s; }
   yAt(t) { // Kugel-Y zur Zeit t, linear zwischen Messpunkten, Rand linear verlängert
     const p = this.pts; if (!p.length) return 0;
     if (t <= p[0][0]) { const v = this.an?.speedRelease || 8; return Math.max(0, p[0][2] - v * (p[0][0] - t)); }
@@ -86,6 +113,17 @@ export class Replay {
   _state() {
     const dur = (this.t1 - this.t0) + (this.tail || 1.2);
     const t = this.t0 + this.p * dur;
+    if (this.sim3 && t >= this.tSim) {
+      const S3 = sim3dAt(this.sim3, t - this.tSim);
+      // für die Draufsicht: Fußpunkt, Neigung (0..1) und Fallrichtung aus der 3D-Lage
+      const pins = {};
+      for (const [id, p] of Object.entries(S3.pins)) {
+        const { base, ax } = poseAxis(p), ang = Math.acos(Math.max(-1, Math.min(1, ax[2])));
+        pins[id] = { x: base[0], y: base[1], tilt: Math.min(1, ang / (Math.PI / 2)), fdir: Math.atan2(ax[0], ax[1]), pit: base[2] < -0.1 };
+      }
+      const b = S3.ball;
+      return { t, y: b[1], x: b[0], rolling: b[2] > -0.05, pinsFallen: false, fade: 0, sim: { ball: { x: b[0], y: b[1], pit: b[2] < -0.05 }, pins }, sim3: S3 };
+    }
     if (this.sim && t >= this.tSim) {
       const S = simAt(this.sim, t - this.tSim);
       return { t, y: S.ball.y, x: S.ball.x, rolling: !S.ball.pit, pinsFallen: false, fade: 0, sim: S };
@@ -174,6 +212,7 @@ export class Replay {
     if (st.sim) {
       const r = Math.max(3.5, 0.06 * Math.min(sx, sy * 3));
       for (const [id, p] of Object.entries(st.sim.pins)) {
+        if (p.y > PIT_Y + 0.3) continue;   // hinten im Schacht verschwunden
         const a = P(p.x, p.y);
         if (p.tilt > 0.01) { // liegender Pin als Kapsel in Fallrichtung
           const L = 0.38 * p.tilt, e = P(p.x + Math.sin(p.fdir) * L, p.y + Math.cos(p.fdir) * L);
@@ -223,6 +262,7 @@ export class Replay {
     ctx.beginPath(); ctx.rect(ox, oy, vw, vh); ctx.clip();
     // beim Einschlag weich auf das Pindeck zoomen (Pins sind im Originalbild nur wenige Pixel groß)
     const st0 = this._state();
+    let zoomT = null;
     if (this.pinZoom && st0.sim) {
       const k = Math.min(1, (st0.t - this.tSim) / 0.35), e = k * k * (3 - 2 * k);
       const a0 = P(0, HEADPIN_Y, 0), a1 = P(LANE_W, HEADPIN_Y, 0);
@@ -233,6 +273,7 @@ export class Replay {
       // Ankerpunkt wandert vom Kopfpin in die Bildmitte, dabei wird vergrößert
       const px = hp[0] + (cx - hp[0]) * e, py = hp[1] + (cy - hp[1]) * e;
       ctx.translate(px, py); ctx.scale(z, z); ctx.translate(-hp[0], -hp[1]);
+      zoomT = { z, hp: [hp[0], hp[1]], anc: [px, py] };
     }
     const g = ctx.createLinearGradient(0, oy, 0, oy + vh); g.addColorStop(0, '#3a3f48'); g.addColorStop(1, '#5a606b');
     ctx.fillStyle = g; ctx.fillRect(ox, oy, vw, vh);
@@ -268,6 +309,27 @@ export class Replay {
     for (const an of this.cmp) if (an?.path) this._polyCam(an.path, P);
     ctx.strokeStyle = COL.path; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
     this._polyCam(path.filter(p => p[0] <= st.y + 0.01), P);
+    // 3D: Pins und Kugel als Körper mit Licht (WebGL), Schatten flach auf der Bahn
+    if (this.sim3 && GL3) {
+      const S3 = st.sim3 || sim3dAt(this.sim3, 0);
+      const bodies = Object.values(S3.pins).map(p => ({ kind: 'pin', pose: p }));
+      const ballPose = st.sim3 ? S3.ball : [st.x, st.y, BALL_R, 0, 0, 0, 1];
+      if (!st.sim3 ? st.rolling : ballPose[2] > -0.05) bodies.push({ kind: 'ball', pose: ballPose, color: cssRgb(this.ballColor) });
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      for (const b of bodies) {
+        const bx = b.pose[0], by = b.pose[1], h = b.kind === 'ball' ? b.pose[2] - BALL_R : poseAxis(b.pose).base[2];
+        if (h < -0.05 || by > PIT_Y) continue;
+        const rr = b.kind === 'ball' ? 0.09 : 0.06, c = P(bx + 0.03, by + 0.04, 0), e = P(bx + 0.03 + rr, by + 0.04, 0);
+        const rx = Math.abs(e[0] - c[0]) || 1, ry = rx * 0.45;
+        ctx.beginPath(); ctx.ellipse(c[0], c[1], rx, ry, 0, 0, 7); ctx.fill();
+      }
+      const img = GL3.render({ w, h, dpr: window.devicePixelRatio || 1, C, off: [ox, oy], zoom: zoomT }, bodies);
+      ctx.save(); ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h); ctx.restore();
+      if (st.sim) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.fillText(this._simText(), ox + 8, oy + 16); }
+      ctx.restore();
+      return;
+    }
     // Pins (hinten zuerst) + Kugel nach Tiefe sortiert
     const before = new Set(this.shot.pinsBefore || PIN_IDS);
     const after = this.shot.pinsAfter ? new Set(this.shot.pinsAfter) : null;

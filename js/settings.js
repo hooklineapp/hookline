@@ -90,6 +90,7 @@ export const SCHEMA = [
   S('showHud', 'bool', false, { group: 'display' }),
   S('debug', 'bool', false, { group: 'display', engine: true }),
   S('pinSim', 'bool', true, { group: 'display', basic: true }),
+  S('pin3d', 'bool', true, { group: 'display', basic: true }),
   S('pinZoom', 'bool', true, { group: 'display', basic: true }),
   S('replaySpeed', 'select', '1', { group: 'display', options: ['0.25', '0.5', '1', '2'] , basic: true }),
   S('replayWidth', 'range', 4, { group: 'display', min: 1, max: 10, step: 0.5 }),
