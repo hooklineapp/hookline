@@ -10,7 +10,7 @@ export const SCHEMA = [
   S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat', 'soft', 'sport', 'pin'], basic: true, look: true }),
   S('accent', 'select', 'indigo', { group: 'general', options: ['indigo', 'ocean', 'lane', 'mint', 'cherry', 'mono'], basic: true, look: true }),
   S('expertMode', 'bool', false, { group: 'general', hidden: true }),
-  S('mascot', 'bool', true, { group: 'general', basic: true }),
+  S('mascot', 'bool', true, { group: 'general', basic: true, look: true }),
   S('preset', 'select', 'recommended', { group: 'general', hidden: true, options: ['recommended', 'handheld', 'tripod', 'battery', 'precise', 'custom'] }),
   S('units', 'select', 'kmh', { group: 'general', options: ['kmh', 'mph'] , basic: true }),
   S('lengthUnit', 'select', 'ft', { group: 'general', options: ['ft', 'm'] , basic: true }),

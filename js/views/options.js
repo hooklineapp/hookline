@@ -183,5 +183,7 @@ function lookCard() {
     h('div.look', { style: { padding: '10px 0 0' } },
       h('div.look-row', null, h('span', null, t('opt.theme')), seg),
       designs,
-      st === 'pin' ? h('div.look-row', null, h('span', null, t('o.accent')), h('small.muted', null, t('o.pinRed'))) : h('div.look-row', null, h('span', null, t('o.accent')), accents)));
+      st === 'pin' ? h('div.look-row', null, h('span', null, t('o.accent')), h('small.muted', null, t('o.pinRed'))) : h('div.look-row', null, h('span', null, t('o.accent')), accents),
+      h('div.look-row', null, h('span', null, t('opt.mascot')),
+        h('label.switch', null, h('input', { type: 'checkbox', checked: S.get('mascot') !== false, onchange: (e) => S.set('mascot', e.target.checked) }), h('i')))));
 }
