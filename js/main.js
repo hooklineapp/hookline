@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.7.8';
+window.BT_VERSION = '1.8.0';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac) S.set('accent', ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
@@ -57,5 +57,8 @@ document.addEventListener('visibilitychange', () => {
 })();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !/[?&]nosw/.test(location.search)) {
-  navigator.serviceWorker.register('sw.js').catch(() => { });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update?.()).catch(() => { });
+  // neue Version aktiv -> einmal neu laden, damit alle Dateien zusammenpassen
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && navigator.serviceWorker.controller) { reloaded = true; location.reload(); } });
 }
