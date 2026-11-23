@@ -19,6 +19,7 @@ let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, stat
 let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ball
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
+let quietUntil = 0;   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
@@ -101,7 +102,7 @@ async function startCam() {
       zoom: +S.get('camZoom'), shortExposure: S.get('camShortExposure'), focusFar: S.get('camFocusFar') });
     window.__camInfo = cam.info; window.__cams = cam.cams;
     hint.style.display = 'none';
-    proc.attach(video, cam.track);
+    proc.attach(video, cam.track); quietUntil = performance.now() + 6000;
     if (corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
     if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startCalib();
@@ -573,10 +574,10 @@ function onResult(m) {
   requestDraw();
 }
 async function handleEvent(ev) {
-  if (ev.type === 'start') { buzz(20); beep(660); }
+  if (ev.type === 'start') { if (performance.now() > quietUntil && last?.ok !== false && mode === 'live') { buzz(20); beep(660); } }
   else if (ev.type === 'abort') { toast(t('shot.abort')); }
   else if (ev.type === 'shot') {
-    buzz(60); beep(990, 0.12);
+    if (performance.now() > quietUntil) { buzz(60); beep(990, 0.12); }
     if (!S.get('autoSave') && !confirm(t('btn.save') + '?')) return;
     const shot = await addShot(ev.shot, { source: fileMode ? 'file' : 'camera' });
     if (fileMode) { fileShots++; fileShotList.push(shot); }
