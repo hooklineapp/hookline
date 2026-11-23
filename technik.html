@@ -68,46 +68,12 @@ code { font: 14px var(--mono); background: var(--acc-soft); padding: 1px 5px; bo
 
 figure { margin: 0; display: grid; gap: 8px; }
 figcaption { font-size: 14px; color: var(--mute); max-width: 68ch; }
-/* Handy-Mockup: Rahmen aus Metall, Display mit Statusleiste und Dynamic Island, echte App-Bilder (390×844) */
-.device { --w: 280px; width: var(--w); max-width: 100%; position: relative; border-radius: calc(var(--w) * .165); padding: calc(var(--w) * .034);
-  background: linear-gradient(140deg, #5c6070 0%, #23252c 18%, #121318 50%, #2a2c33 82%, #6b6f7d 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22), inset 0 0 0 calc(var(--w) * .011) #0b0c10,
-    0 calc(var(--w) * .12) calc(var(--w) * .2) calc(var(--w) * -.08) rgba(16, 18, 32, .45), 0 calc(var(--w) * .03) calc(var(--w) * .06) rgba(16, 18, 32, .18); }
-.device::before, .device::after { content: ""; position: absolute; width: calc(var(--w) * .012); border-radius: 2px; background: linear-gradient(90deg, #6b6f7d, #2a2c33); }
-.device::before { left: calc(var(--w) * -.009); top: 24%; height: 15%; box-shadow: 0 calc(var(--w) * -.18) 0 0 #3a3d46; }
-.device::after { right: calc(var(--w) * -.009); top: 30%; height: 20%; }
-.device .screen { position: relative; overflow: hidden; border-radius: calc(var(--w) * .135); background: #f4f5fa; isolation: isolate; }
-.device .sb { display: flex; align-items: center; justify-content: space-between; padding: 0 calc(var(--w) * .085); height: calc(var(--w) * .118);
-  font: 600 calc(var(--w) * .047) / 1 var(--sans); color: #0d0f15; background: #f4f5fa; letter-spacing: -.01em; }
-.device.dark .sb, .device.dark .screen { background: #0e1016; color: #fff; }
-.device .island { position: absolute; left: 50%; top: calc(var(--w) * .03); transform: translateX(-50%); width: 31%; height: calc(var(--w) * .088); border-radius: 999px; background: #000; }
-.device .sbi svg { width: calc(var(--w) * .2); height: auto; display: block; }
-.device img { display: block; width: 100%; height: auto; }
-.device .glare { position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(115deg, rgba(255, 255, 255, .16) 0%, rgba(255, 255, 255, 0) 32%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, .06) 100%); }
-#kugel figure figcaption, .trio figcaption { text-align: center; }
-.stage { perspective: 1600px; display: grid; justify-items: center; padding-block: 8px 20px; }
-.stage .device { transition: transform .5s ease; }
-@media (min-width: 820px) { .stage.tilt-r .device { transform: rotateY(14deg) rotateX(3deg); } .stage.tilt-r:hover .device { transform: none; } }
-.trio { display: flex; gap: 22px; justify-content: center; align-items: flex-start; perspective: 1800px; padding-block: 10px 12px; }
-.trio figure { display: grid; justify-items: center; gap: 12px; }
-.trio .device { --w: 250px; }
-.trio .mid .device { --w: 270px; z-index: 2; }
-@media (min-width: 900px) {
-  .trio { gap: 0; }
-  .trio .side.l .device { transform: translateX(24px) rotateY(22deg) scale(.95); transform-origin: right center; }
-  .trio .side.r .device { transform: translateX(-24px) rotateY(-22deg) scale(.95); transform-origin: left center; }
-  .trio .side { margin-top: 26px; }
-}
-@media (max-width: 899px) {
-  .trio { justify-content: flex-start; overflow-x: auto; scroll-snap-type: x mandatory; padding-inline: 4px; margin-inline: -4px; }
-  .trio figure { scroll-snap-align: center; flex: none; }
-  .trio .device, .trio .mid .device { --w: min(250px, 70vw); }
-}
-@media (prefers-reduced-motion: reduce) { .stage .device { transition: none; } }
+/* Handy-Mockups: in Blender gerendert (tools/blender/mockup.py), durchsichtiger Hintergrund */
+.mock { display: block; width: 100%; height: auto; max-width: 400px; margin-inline: auto; filter: drop-shadow(0 28px 30px rgba(16, 18, 32, .22)); }
+.mock.wide { max-width: 980px; }
 .shot { width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); display: block; }
-.diagram { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; overflow-x: auto; }
-.diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+.diagram { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: clamp(10px, 2.5vw, 18px); overflow: hidden; }
+.diagram svg { display: block; width: 100%; height: auto; }
 .diagram svg text { font-family: var(--sans); }
 
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
@@ -143,7 +109,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     <h1>So misst Hookline deinen Wurf</h1>
     <p class="lead">Eine Handykamera, kein Zubehör, keine Cloud. Hookline erkennt die Bahn, verfolgt die Kugel bis zu den Pins und misst, welche Pins fallen. Alles läuft im Browser auf deinem Gerät.</p>
     <div class="toc">
-      <a href="#ablauf">Ablauf</a><a href="#bahn">Bahn-Tracking</a><a href="#kugel">Kugel und Laufweg</a><a href="#pins">Pins</a><a href="#replay">Replay</a><a href="#tests">Tests</a>
+      <a href="#ablauf">Ablauf</a><a href="#bahn">Bahn-Tracking</a><a href="#kugel">Kugel und Laufweg</a><a href="#pins">Pins</a><a href="#replay">Replay</a>
     </div>
   </div>
 </header>
@@ -221,7 +187,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
 <section id="kugel"><div class="wrap sec">
   <div class="two rev">
     <figure>
-      <div class="stage tilt-r"><div class="device light"><div class="screen"><div class="sb"><span class="time">9:41</span><i class="island"></i><span class="sbi"><svg viewBox="0 0 64 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6.5" width="3" height="6.5" rx="1"/><rect x="10" y="4" width="3" height="9" rx="1"/><rect x="15" y="1.5" width="3" height="11.5" rx="1"/><path d="M28 12.6l-2.2-2.3a3.2 3.2 0 0 1 4.4 0zM24.3 8.8l-1.5-1.5a7.4 7.4 0 0 1 10.4 0l-1.5 1.5a5.3 5.3 0 0 0-7.4 0zM21.3 5.8 19.8 4.3a11.6 11.6 0 0 1 16.4 0l-1.5 1.5a9.5 9.5 0 0 0-13.4 0z"/><rect x="40.5" y="1.5" width="20" height="11" rx="3.3" fill="none" stroke="currentColor" stroke-opacity=".45"/><rect x="42.5" y="3.5" width="14" height="7" rx="1.8"/><path d="M62 5.5v3a1.6 1.6 0 0 0 0-3z" opacity=".45"/></g></svg></span></div><img src="info/img/app-replay-draufsicht.jpg" alt="Replay in der Draufsicht mit rotem Laufweg der Kugel" loading="lazy" width="540" height="1169"><i class="glare"></i></div></div></div>
+      <img class="mock" src="info/img/mockup-kugel.webp" alt="Smartphone mit dem Replay in der Draufsicht: roter Laufweg der Kugel bis zu den Pins" loading="lazy" width="800" height="1843">
       <figcaption>Laufweg in der Draufsicht. Der grüne Punkt ist der Breakpoint, der Wendepunkt der Kurve.</figcaption>
     </figure>
     <div class="text">
@@ -263,30 +229,13 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: 
     <h2>Messung und Simulation gemischt</h2>
     <p>Das Replay braucht kein Video. Hookline zeichnet den Wurf aus den Messwerten neu, von oben oder aus der nachgebauten Kamerasicht. Für die Pins rechnet eine kleine Physik (Kugel und Pins als Scheiben mit Stößen und Reibung). Ist „Pin-Verlauf messen“ eingeschaltet, rechnet Hookline einige Dutzend Varianten (Treffpunkt, Winkel, Tempo, Stoßzahlen) und nimmt die, die am besten zu den gemessenen Fallzeiten passt. Sicher gemessene Pins übernehmen ihre echte Fallzeit.</p>
   </div>
-  <div class="trio" role="list">
-    <figure role="listitem" class="side l"><div class="device light"><div class="screen"><div class="sb"><span class="time">9:41</span><i class="island"></i><span class="sbi"><svg viewBox="0 0 64 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6.5" width="3" height="6.5" rx="1"/><rect x="10" y="4" width="3" height="9" rx="1"/><rect x="15" y="1.5" width="3" height="11.5" rx="1"/><path d="M28 12.6l-2.2-2.3a3.2 3.2 0 0 1 4.4 0zM24.3 8.8l-1.5-1.5a7.4 7.4 0 0 1 10.4 0l-1.5 1.5a5.3 5.3 0 0 0-7.4 0zM21.3 5.8 19.8 4.3a11.6 11.6 0 0 1 16.4 0l-1.5 1.5a9.5 9.5 0 0 0-13.4 0z"/><rect x="40.5" y="1.5" width="20" height="11" rx="3.3" fill="none" stroke="currentColor" stroke-opacity=".45"/><rect x="42.5" y="3.5" width="14" height="7" rx="1.8"/><path d="M62 5.5v3a1.6 1.6 0 0 0 0-3z" opacity=".45"/></g></svg></span></div><img src="info/img/app-replay-pins.jpg" alt="Draufsicht mit umfallenden Pins" loading="lazy" width="540" height="1169"><i class="glare"></i></div></div><figcaption>Draufsicht mit Pins</figcaption></figure>
-    <figure role="listitem" class="mid"><div class="device light"><div class="screen"><div class="sb"><span class="time">9:41</span><i class="island"></i><span class="sbi"><svg viewBox="0 0 64 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6.5" width="3" height="6.5" rx="1"/><rect x="10" y="4" width="3" height="9" rx="1"/><rect x="15" y="1.5" width="3" height="11.5" rx="1"/><path d="M28 12.6l-2.2-2.3a3.2 3.2 0 0 1 4.4 0zM24.3 8.8l-1.5-1.5a7.4 7.4 0 0 1 10.4 0l-1.5 1.5a5.3 5.3 0 0 0-7.4 0zM21.3 5.8 19.8 4.3a11.6 11.6 0 0 1 16.4 0l-1.5 1.5a9.5 9.5 0 0 0-13.4 0z"/><rect x="40.5" y="1.5" width="20" height="11" rx="3.3" fill="none" stroke="currentColor" stroke-opacity=".45"/><rect x="42.5" y="3.5" width="14" height="7" rx="1.8"/><path d="M62 5.5v3a1.6 1.6 0 0 0 0-3z" opacity=".45"/></g></svg></span></div><img src="info/img/app-replay-kamera-pins.jpg" alt="Kamerasicht beim Einschlag" loading="lazy" width="540" height="1169"><i class="glare"></i></div></div><figcaption>Kamerasicht beim Einschlag</figcaption></figure>
-    <figure role="listitem" class="side r"><div class="device light"><div class="screen"><div class="sb"><span class="time">9:41</span><i class="island"></i><span class="sbi"><svg viewBox="0 0 64 14" aria-hidden="true"><g fill="currentColor"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6.5" width="3" height="6.5" rx="1"/><rect x="10" y="4" width="3" height="9" rx="1"/><rect x="15" y="1.5" width="3" height="11.5" rx="1"/><path d="M28 12.6l-2.2-2.3a3.2 3.2 0 0 1 4.4 0zM24.3 8.8l-1.5-1.5a7.4 7.4 0 0 1 10.4 0l-1.5 1.5a5.3 5.3 0 0 0-7.4 0zM21.3 5.8 19.8 4.3a11.6 11.6 0 0 1 16.4 0l-1.5 1.5a9.5 9.5 0 0 0-13.4 0z"/><rect x="40.5" y="1.5" width="20" height="11" rx="3.3" fill="none" stroke="currentColor" stroke-opacity=".45"/><rect x="42.5" y="3.5" width="14" height="7" rx="1.8"/><path d="M62 5.5v3a1.6 1.6 0 0 0 0-3z" opacity=".45"/></g></svg></span></div><img src="info/img/app-replay-kamera.jpg" alt="Nachgebaute Kamerasicht mit Laufweg" loading="lazy" width="540" height="1169"><i class="glare"></i></div></div><figcaption>Kamerasicht</figcaption></figure>
-  </div>
+  <figure>
+    <img class="mock wide" src="info/img/mockup-replay.webp" alt="Drei Smartphones mit dem Replay: Draufsicht mit Pins, Kamerasicht beim Einschlag, Kamerasicht mit Laufweg" loading="lazy" width="1800" height="1265">
+    <figcaption>Links die Draufsicht mit Pins, in der Mitte die nachgebaute Kamerasicht beim Einschlag, rechts die Kamerasicht mit Laufweg.</figcaption>
+  </figure>
 </div></section>
 
-<section id="tests"><div class="wrap sec">
-  <div class="sec-head">
-    <p class="eyebrow">Tests</p>
-    <h2>Geprüft gegen Szenen mit bekannten Sollwerten</h2>
-    <p>Für die Entwicklung erzeugt ein Blender-Skript Würfe mit exakten Sollwerten: Laufweg, Tempo, Einschlag und Fallbeginn jedes Pins. Jeder Wurf wird aus mehreren Blickwinkeln gefilmt, mit Stativ und mit unruhiger Hand. Danach „filmen“ ihn verschiedene Handykameras nach: Rolling Shutter, schwankende Belichtung, Rauschen, Unschärfe, Fokuspumpen, 30 statt 60 Bilder pro Sekunde und starke Kompression.</p>
-  </div>
-  <figure>
-    <img class="shot" src="info/img/handykameras.jpg" alt="Derselbe Moment dreimal: gutes, mittleres und schlechtes Handy" loading="lazy" width="1080" height="640">
-    <figcaption>Derselbe Moment mit drei simulierten Handykameras: gut (720p, 60 Bilder/s), mittel und schlecht (360p, 30 Bilder/s, viel Rauschen).</figcaption>
-  </figure>
-  <div class="facts">
-    <div class="fact"><b>±1–2 %</b><span>Tempo gegenüber Sollwert</span></div>
-    <div class="fact"><b>±0,5</b><span>Bretter beim Einlauf</span></div>
-    <div class="fact"><b>11 / 11</b><span>Szenen mit richtig erkannten stehenden Pins</span></div>
-    <div class="fact"><b>0,10 → 0,06 s</b><span>Fehler beim Fallbeginn: reine Simulation → Mischung</span></div>
-  </div>
-</div></section>
+
 </main>
 
 <footer><div class="wrap">
