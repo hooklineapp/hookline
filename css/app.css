@@ -478,3 +478,19 @@ details.grp[open] > summary { border-bottom: 1px solid var(--line); }
 @keyframes peek { 0%, 100% { transform: translateY(0) rotate(4deg); } 50% { transform: translateY(-4px) rotate(-2deg); } }
 .welcome { padding-top: 70px; }
 :root[data-style="pin"] .welcome-card li { background: var(--bg2); }
+
+/* ---------- Kopfzeile über dem Kamerabild: feiner, dezenter (für alle Designs gleich) ---------- */
+.topbar { padding-top: calc(10px + var(--safe-t)); gap: 6px; align-items: center; }
+.topbar .chip, .topbar .avatar {
+  background: rgba(12, 15, 22, .46) !important; color: rgba(255, 255, 255, .94) !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important; box-shadow: none !important;
+  backdrop-filter: blur(10px) saturate(1.3) !important; -webkit-backdrop-filter: blur(10px) saturate(1.3) !important;
+  border-radius: 999px !important;
+}
+.topbar .chip.status { padding: 4px 10px 4px 8px; font-size: 12px; font-weight: 500; letter-spacing: .01em; gap: 6px; }
+.topbar .chip .dot { width: 6px; height: 6px; box-shadow: none !important; }
+.topbar .chip.game { flex-direction: row; align-items: baseline; gap: 6px; padding: 4px 11px; line-height: 1.3; }
+.topbar .chip.game small { font-size: 10px; letter-spacing: .05em; color: rgba(255, 255, 255, .6); font-weight: 500; }
+.topbar .chip.game b { font-size: 12.5px; font-weight: 600; }
+.topbar .score-badge { position: static; margin-left: 2px; padding: 0 6px; font-size: 10.5px; line-height: 16px; box-shadow: none; }
+.topbar .avatar { width: 30px; height: 30px; font-size: 11px; font-weight: 600; box-shadow: inset 0 0 0 2px var(--ring, rgba(255,255,255,.3)) !important; }
