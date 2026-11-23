@@ -449,3 +449,25 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 /* Texte über den Streifen bekommen eine weiße Aussparung, damit sie lesbar bleiben */
 :root[data-style="pin"] .view > h2 { width: fit-content; margin-left: max(0px, calc(50% - 430px)); background: var(--bg); padding: 0 10px 2px 0; border-radius: 0 8px 8px 0; }
 :root[data-style="pin"] .mode-switch small { background: var(--bg); padding: 4px 8px 4px 0; border-radius: 0 8px 8px 0; flex: 0 1 auto; }
+
+/* ---------- Klickflächen in Menüs deutlich als Knopf erkennbar ---------- */
+.view .card button:not(.primary):not(.danger):not(.preset):not(.design):not(.accent):not(.skip),
+.view .opt button:not(.primary):not(.danger), .view .row > button:not(.primary):not(.danger):not(.skip), .view .back,
+.sheet button:not(.primary):not(.danger):not(.icon):not(.menuitem), .view .rctl button:not(.primary) {
+  background: var(--bg2); border: 1px solid var(--line); color: var(--ink); font-weight: 600;
+}
+.view .card button:not(.primary):not(.danger):hover, .view .opt button:hover, .view .back:hover { filter: brightness(.97); }
+.preset { background: var(--bg2) !important; border: 1.5px solid var(--line) !important; cursor: pointer; transition: border-color .15s, transform .08s; }
+.preset:hover { border-color: var(--acc) !important; }
+.preset.on { background: var(--acc-soft) !important; border-color: var(--acc) !important; }
+.design { background: var(--bg2) !important; border: 2px solid var(--line) !important; }
+.design.on { border-color: var(--acc) !important; }
+details.grp > summary { background: var(--bg2); transition: background .15s; }
+details.grp > summary:hover { filter: brightness(.98); }
+details.grp[open] > summary { border-bottom: 1px solid var(--line); }
+.seg { border: 1px solid var(--line); }
+.item { border: 1px solid var(--line); }
+.item:hover { border-color: var(--acc); }
+.menuitem { border: 1px solid var(--line); }
+.profile-row button { padding: 7px 12px !important; }
+:root[data-style="flat"] details.grp > summary, :root[data-style="pin"] details.grp > summary { background: var(--bg2); }
