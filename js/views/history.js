@@ -105,7 +105,7 @@ async function renderShot(id, sid) {
     for (const m of modes) {
       const cv = h('canvas'); box.append(cv); canvases.push(cv);
       const r = new Replay(cv);
-      Object.assign(r, { mode: m === 'camera' && !shot.cam ? 'top' : m, exag: +S.get('replayWidth'), speed: +S.get('replaySpeed'), cmp, ballColor: bc, pinSim: !!S.get('pinSim'), pinZoom: !!S.get('pinZoom'), simLabel: t('h.simLabel') });
+      Object.assign(r, { mode: m === 'camera' && !shot.cam ? 'top' : m, exag: +S.get('replayWidth'), speed: +S.get('replaySpeed'), cmp, ballColor: bc, pinSim: !!S.get('pinSim'), pinZoom: !!S.get('pinZoom'), simLabel: t('h.simLabel'), mixLabel: t('h.mixLabel') });
       players.push(r);
     }
   };

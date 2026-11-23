@@ -82,7 +82,7 @@ export async function addShot(es, extra = {}) {
     id: db.uid(), sessionId: state.session.id, bowlerId: state.bowler.id, hand: state.bowler.hand,
     t: Date.now(), game: state.game, frame: pos.frame, ball: pos.ball,
     pinsBefore: pos.pinsBefore, pinsAfter: es.pinsAfter ? es.pinsAfter.filter(p => pos.pinsBefore.includes(p)) : null,
-    pinDetail: es.pinDetail || null, pinsManual: false,
+    pinDetail: es.pinDetail || null, pinsManual: false, pinTrack: es.pinTrack || null,
     points: es.points || [], itrack: es.itrack || [], tStart: es.tStart, tImpact: es.tImpact, cam: es.cam || null,
     source: extra.source || 'camera',
   };

@@ -63,6 +63,7 @@ export const SCHEMA = [
   S('smooth', 'range', 40, { group: 'ball', min: 1, max: 400, step: 1 }),
   // Pins
   S('pinsEnabled', 'bool', E.pinsEnabled, { group: 'pins', engine: true , basic: true }),
+  S('pinTrack', 'bool', E.pinTrack, { group: 'pins', engine: true, basic: true }),
   S('pinDelay', 'range', E.pinDelay, { group: 'pins', min: 0.5, max: 5, step: 0.1, engine: true }),
   S('pinWindow', 'range', E.pinWindow, { group: 'pins', min: 0.05, max: 1.5, step: 0.05, engine: true }),
   S('pinRatio', 'range', E.pinRatio, { group: 'pins', min: 0.1, max: 0.95, step: 0.05, engine: true }),

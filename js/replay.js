@@ -3,6 +3,7 @@ import { LANE_W, GUTTER_W, HEADPIN_Y, PIT_Y, BOARD_W, PINS, PIN_IDS, ARROWS, DOT
 import { cameraFromH, mul } from './vision/geometry.js';
 import { interpX } from './analysis.js';
 import { simulatePins, simAt } from './pinsim.js';
+const SIMS = new WeakMap();
 
 const COL = { lane: '#e9cf9f', lane2: '#dcbd86', board: 'rgba(120,80,30,.16)', gutter: '#8b9099', cap: '#c9ced6', deck: '#f2e3c4',
   pit: '#2b2f36', approach: '#f3e2bd', foul: '#c0392b', arrow: '#6b4a22', path: '#e4572e', cmp: 'rgba(40,60,90,.28)', ball: '#4f46e5', bp: '#10b981' };
@@ -31,13 +32,16 @@ export class Replay {
     this.t1 = shot.tImpact ?? (pts.length ? pts[pts.length - 1][0] : 1);
     if (!(this.t1 > this.t0)) this.t1 = this.t0 + 2.5;
     // Pin-Simulation (optional): startet kurz vor dem Einschlag
-    this.sim = this.pinSim ? simulatePins(shot, an) : null;
-    const vImp = Math.max(3, an?.speedImpact || an?.speedAvg || 7.5);
-    this.tSim = this.t1 - 0.45 / vImp;
+    // Ergebnis je Wurf merken: die Anpassung an den gemessenen Pin-Verlauf rechnet einige hundert Varianten
+    this.sim = null;
+    if (this.pinSim) { this.sim = SIMS.get(shot); if (!this.sim) { this.sim = simulatePins(shot, an); if (this.sim) SIMS.set(shot, this.sim); } }
+    // Simulation beginnt dort, wo die Messung den Einschlag setzt (Kugel 0,45 m vor dem Kopfpin)
+    this.tSim = this.t1;
     this.tail = this.sim ? 1.6 : 1.2;
     this.p = opts.p ?? 1;
     this.draw();
   }
+  _simText() { return this.sim?.mixed ? (this.mixLabel || 'Messung + Simulation') : (this.simLabel || 'Simulation'); }
   yAt(t) { // Kugel-Y zur Zeit t, linear zwischen Messpunkten, Rand linear verlängert
     const p = this.pts; if (!p.length) return 0;
     if (t <= p[0][0]) { const v = this.an?.speedRelease || 8; return Math.max(0, p[0][2] - v * (p[0][0] - t)); }
@@ -185,7 +189,7 @@ export class Replay {
         void id;
       }
       ctx.fillStyle = 'rgba(79,70,229,.85)'; ctx.font = '600 11px system-ui, sans-serif';
-      ctx.fillText(this.simLabel || 'Simulation', 8, 16);
+      ctx.fillText(this._simText(), 8, 16);
       return;
     }
     const before = new Set(this.shot.pinsBefore || PIN_IDS);
@@ -306,7 +310,7 @@ export class Replay {
       }
       ctx.globalAlpha = 1;
     }
-    if (st.sim) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.fillText(this.simLabel || 'Simulation', ox + 8, oy + 16); }
+    if (st.sim) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.fillText(this._simText(), ox + 8, oy + 16); }
     ctx.restore();
   }
   _polyCam(path, P) {

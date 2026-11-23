@@ -10,6 +10,14 @@ import { icon } from '../ui.js';
 let root;
 export function initOptions(el) { root = el; }
 
+// Auf/Zu-Zustand der Bereiche merken, damit ein Neuaufbau (z. B. Normal/Experte) nichts auf- oder zuklappt
+const opened = {};
+function keepOpen(d, key, def) {
+  d.open = opened[key] ?? def;
+  d.addEventListener('toggle', () => { opened[key] = d.open; });
+  return d;
+}
+
 export async function showOptions(keepLook) {
   if (!keepLook) lookOpen = false;
   const keepY = keepLook ? root.scrollTop : 0;
@@ -18,8 +26,8 @@ export async function showOptions(keepLook) {
   const ex = !!S.get('expertMode');
   root.append(h('div.mode-switch', null, h('small', null, t('o.expertHint')),
     h('div.seg', null,
-      h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(); } }, t('o.normal')),
-      h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(); } }, t('o.expert')))));
+      h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(true); } }, t('o.normal')),
+      h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(true); } }, t('o.expert')))));
   root.append(presetsCard());
   root.append(profilesCard());
   root.append(await bowlersCard());
@@ -31,7 +39,7 @@ export async function showOptions(keepLook) {
 }
 
 async function bowlersCard() {
-  const d = h('details.grp', { open: true }, h('summary', null, t('o.bowlers')));
+  const d = keepOpen(h('details.grp', null, h('summary', null, t('o.bowlers'))), 'bowlers', true);
   for (const b of state.bowlers) {
     const c = b.ballColor?.rgb;
     d.append(h('div.opt', null,
@@ -63,7 +71,7 @@ async function editBowler(b, isNew) {
 async function groupEl(g, expert) {
   const items = S.SCHEMA.filter(x => x.group === g && !x.hidden && !x.look && (expert || x.basic));
   if (!items.length) return null;
-  const d = h('details.grp', { open: g === 'general' && !expert }, h('summary', null, t('g.' + g)));
+  const d = keepOpen(h('details.grp', null, h('summary', null, t('g.' + g))), g, g === 'general');
   let cams = [];
   if (g === 'camera') { try { cams = await listCameras(); } catch { /* */ } }
   for (const s of items) d.append(control(s, cams));
@@ -100,7 +108,7 @@ function control(s, cams) {
 
 async function dataCard() {
   const shots = await db.list('shots'), sessions = await db.list('sessions');
-  const d = h('details.grp', null, h('summary', null, t('o.data')));
+  const d = keepOpen(h('details.grp', null, h('summary', null, t('o.data'))), 'data', false);
   d.append(h('div.opt', null, h('span', null, t('o.storage', { n: shots.length, s: sessions.length }))));
   d.append(h('div.opt', null, h('span', null, t('btn.export') + ' / ' + t('btn.import')), h('div.row', null,
     h('button', { onclick: exportData }, t('btn.export')),
@@ -125,11 +133,11 @@ function aboutCard() {
     btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); await applyUpdate(u.latest); };
   } }, t('u.check'));
   const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
-  return h('details.grp', { open: hasUpd }, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
+  return keepOpen(h('details.grp', null, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
     h('div.opt', null, h('span', null, t('u.title'), h('br'), status), btn),
     h('div.opt', null, h('span', null, t('o.install')), h('span')),
     h('div.opt', null, h('div.hint', null, t('o.installHint'))),
-    h('div.opt', null, h('span', null, t('misc.version')), h('span.muted', null, window.BT_VERSION || '')));
+    h('div.opt', null, h('span', null, t('misc.version')), h('span.muted', null, window.BT_VERSION || ''))), 'about', !!hasUpd);
 }
 function download(name, text) {
   const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/json' })), download: name });
@@ -169,10 +177,10 @@ function profilesCard() {
   const rows = list.length ? list.map(p => h('div.profile-row', null, h('span', null, p.name),
     h('button', { onclick: () => { S.loadProfile(p.name); toast(t('o.profileLoaded'), 'ok'); showOptions(); } }, t('o.load')),
     h('button', { onclick: async () => { if (await confirmBox(p.name + ' ' + t('btn.delete') + '?')) { S.deleteProfile(p.name); showOptions(); } }, 'aria-label': t('btn.delete') }, '✕'))) : [h('p.muted', { style: { margin: '4px 0', fontSize: '13px' } }, t('o.noProfiles'))];
-  return h('details.grp', null, h('summary', null, t('o.profiles')),
+  return keepOpen(h('details.grp', null, h('summary', null, t('o.profiles')),
     h('div', { style: { padding: '4px 16px 12px' } }, rows,
       h('div.row', { style: { marginTop: '10px' } }, name,
-        h('button.primary', { onclick: () => { const n = name.value.trim(); if (!n) { name.focus(); return; } S.saveProfile(n); toast(t('o.profileSaved'), 'ok'); showOptions(); } }, t('btn.save')))));
+        h('button.primary', { onclick: () => { const n = name.value.trim(); if (!n) { name.focus(); return; } S.saveProfile(n); toast(t('o.profileSaved'), 'ok'); showOptions(); } }, t('btn.save'))))), 'profiles', false);
 }
 
 function lookCard() {
