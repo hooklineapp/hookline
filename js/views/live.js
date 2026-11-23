@@ -105,7 +105,10 @@ async function startCam() {
     if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startWizard();
   } catch (e) {
     const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
-    hint.style.display = 'grid'; hint.firstChild.textContent = msg + ' — ' + t('btn.file') + ' ↓';
+    hint.style.display = 'grid'; hint.firstChild.innerHTML = '';
+    hint.firstChild.append(h('p', null, msg), h('div.cal-actions', { style: { justifyContent: 'center' } },
+      h('button.pillbtn', { onclick: () => startCam() }, t('btn.retry')),
+      h('button.pillbtn.primary', { onclick: pickFile }, icon('video'), t('file.short'))));
     setStatus('st.nocam', 'bad');
   }
 }

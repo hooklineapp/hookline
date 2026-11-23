@@ -534,3 +534,43 @@ details.grp[open] > summary { border-bottom: 1px solid var(--line); }
 .cp-hex { font: 600 16px ui-monospace, Consolas, monospace; text-transform: uppercase; }
 .cp-quick { display: grid; grid-template-columns: repeat(6, 34px); justify-content: space-between; gap: 8px; }
 .cp-quick button { width: 34px; height: 34px; aspect-ratio: 1; border-radius: 50% !important; border: 2px solid var(--card) !important; box-shadow: 0 0 0 1px var(--line) !important; padding: 0 !important; }
+
+/* =====================================================================
+   Usability-Feinschliff (WCAG 2.2: Kontrast 4,5:1 / 3:1, Touch-Ziele ≥ 44 px nach Apple HIG / Material)
+   ===================================================================== */
+:root { --mute: #556070; --bad: #dc2626; }
+:root[data-theme="dark"] { --mute: #9aa4b8; }
+:root[data-style="pin"] { --mute: #5a5a5a; }
+:root[data-style="pin"][data-theme="dark"] { --mute: #a6a6a6; }
+
+/* Mindestgröße für alle Bedienelemente */
+.card button, .sheet button:not(.icon), .view > button, .row > button, .opt button, .back, .pillbtn, .choice button, .menuitem,
+.seg button, .preset, .design, .colorbtn, .rctl button, .welcome-card button, .cal-actions button, button.skip { min-height: 44px; }
+.opt select, select.inp, .inp, .rctl select { min-height: 44px; }
+.iconbtn { width: 44px; height: 44px; }
+.pinpad { grid-template-columns: repeat(7, 44px); grid-template-rows: repeat(4, 44px); gap: 2px; }
+.pinpad button { width: 44px; height: 44px; }
+.cp-quick { grid-template-columns: repeat(6, 44px); }
+.cp-quick button { width: 44px; height: 44px; }
+/* Schalter: sichtbar klein, Trefferfläche 48×44 */
+.switch { width: 48px; height: 44px; display: inline-flex; align-items: center; }
+.switch i { inset: 8px 0; }
+.switch i::after { top: 3px; }
+/* Schieberegler: dicke Spur, großer Griff */
+input[type=range] { height: 32px; accent-color: var(--acc); }
+/* Kopfzeile über der Kamera: optisch klein, Trefferfläche ≥ 44 px */
+.topbar .chip.game, .topbar .avatar { position: relative; }
+.topbar .chip.game::before, .topbar .avatar::before { content: ''; position: absolute; inset: -9px -4px; }
+/* Ersatz für zu kleine Beschriftungen */
+.dbtn { font-size: 12px; min-height: 52px; }
+.sc-stat small, .mtable small, .facts small, .tile small, .step { font-size: 12px; }
+.chip.game small, .topbar .chip.game small { font-size: 11px; }
+.score .fn { font-size: 11px; }
+/* Tastatur-Fokus sichtbar (WCAG 2.4.7) */
+:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; border-radius: 6px; }
+button:focus:not(:focus-visible) { outline: none; }
+/* Löschen-Knöpfe: ausreichend Kontrast */
+button.danger, .row > button.danger { background: var(--bad); }
+input.inp { min-height: 44px; }
+.view .row > button, .rctl button { min-width: 44px; }
+.rctl button.primary { width: 48px; height: 48px; }
