@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.4.0';
+window.BT_VERSION = '1.5.0';
 S.loadSettings();
 setLang(S.get('lang'));
 // Design: Glas/Flat und Hell/Dunkel/Automatisch

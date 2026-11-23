@@ -304,3 +304,42 @@ details.grp[open] > summary::after { transform: rotate(-135deg); }
 :root[data-style="flat"] h2 { font-weight: 700; letter-spacing: 0; }
 .mode-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
 .mode-switch small { color: var(--mute); flex: 1; }
+
+/* ---------- Maskottchen Pinni ---------- */
+.mascot { display: inline-block; line-height: 0; flex: none; }
+.mascot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.mascot.idle .m-eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+.m-wiz { width: 44px; height: 44px; border-radius: 50%; background: var(--acc-soft); padding: 4px; }
+.m-welcome { width: 72px; height: 182px; margin: 4px auto 6px; animation: hop 2.4s ease-in-out infinite; }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .mascot.idle .m-eye, .m-welcome { animation: none; } }
+.wiz-title { display: flex; align-items: center; gap: 10px; }
+.wiz-title b { display: block; font-size: 16px; }
+button.skip { color: var(--mute); font-weight: 600; font-size: 14px; padding: 8px 10px; border-radius: 999px; }
+button.skip:hover { background: var(--bg2); }
+
+.welcome { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .2s; }
+.welcome.out { opacity: 0; transition: opacity .2s; }
+.welcome-card { background: var(--card); color: var(--ink); border-radius: 28px; padding: 20px 20px 16px; width: min(400px, 100%); box-shadow: var(--sh-lg); text-align: center; }
+.welcome-card h2 { margin: 4px 0 10px; font-size: 22px; }
+.welcome-card ul { list-style: none; margin: 0 0 16px; padding: 0; text-align: left; display: grid; gap: 8px; }
+.welcome-card li { background: var(--bg); border-radius: 14px; padding: 9px 12px; font-size: 14px; color: var(--ink2); }
+
+.optbar { height: 8px; border-radius: 8px; background: var(--bg2); overflow: hidden; margin: 0 2px 12px; }
+.optbar i { display: block; height: 100%; width: 0; background: var(--grad); border-radius: 8px; transition: width .1s linear; }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 10px; }
+.facts div { background: var(--bg); border-radius: 12px; padding: 7px 8px; min-width: 0; }
+.facts small { display: block; font-size: 10.5px; color: var(--mute); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.facts b { font-size: 15px; }
+ul.changes { margin: 0 0 8px; padding-left: 18px; font-size: 14px; color: var(--ink2); }
+p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: var(--warn-soft); color: var(--ink2); font-size: 13px; }
+
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.preset { text-align: left; border-radius: 16px; padding: 11px 12px; background: var(--bg); border: 1.5px solid transparent !important; display: grid; gap: 2px; }
+.preset b { font-size: 14px; } .preset small { color: var(--mute); font-size: 12px; }
+.preset.on { border-color: var(--acc) !important; background: var(--acc-soft); }
+.profile-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.profile-row:first-child { border-top: 0; }
+.profile-row span { flex: 1; font-weight: 600; }
+:root[data-style="flat"] .preset, :root[data-style="flat"] .welcome-card, :root[data-style="flat"] .welcome-card li, :root[data-style="flat"] .facts div { border-radius: 3px !important; }

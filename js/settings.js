@@ -9,6 +9,8 @@ export const SCHEMA = [
   S('theme', 'select', 'auto', { group: 'general', options: ['auto', 'light', 'dark'], basic: true }),
   S('uiStyle', 'select', 'glass', { group: 'general', options: ['glass', 'flat'], basic: true }),
   S('expertMode', 'bool', false, { group: 'general', hidden: true }),
+  S('mascot', 'bool', true, { group: 'general', basic: true }),
+  S('preset', 'select', 'recommended', { group: 'general', hidden: true, options: ['recommended', 'handheld', 'tripod', 'battery', 'precise', 'custom'] }),
   S('units', 'select', 'kmh', { group: 'general', options: ['kmh', 'mph'] , basic: true }),
   S('lengthUnit', 'select', 'ft', { group: 'general', options: ['ft', 'm'] , basic: true }),
   S('haptics', 'bool', true, { group: 'general' , basic: true }),
@@ -109,6 +111,7 @@ export function get(k) { return values[k]; }
 export function all() { return values; }
 export function set(k, v) {
   values[k] = v;
+  if (byKey[k] && ['camera', 'processing', 'ball', 'pins'].includes(byKey[k].group)) values.preset = 'custom';
   try { localStorage.setItem(KEY, JSON.stringify(values)); } catch { /* */ }
   listeners.forEach(f => f(k, v));
 }
@@ -130,3 +133,35 @@ export function importSettings(obj) {
   try { localStorage.setItem(KEY, JSON.stringify(values)); } catch { /* */ }
   listeners.forEach(f => f('*'));
 }
+
+// ---------- Vorlagen ----------
+// Jede Vorlage setzt Kamera/Verarbeitung/Erkennung zuerst auf Standard und ändert dann nur ihre Werte.
+export const PRESETS = {
+  recommended: {},
+  handheld: { trackMode: 'hand', features: 170, refRefresh: true, workW: '640', maxMissNear: 1.0 },
+  tripod: { trackMode: 'tripod', workW: '800', camFps: 'max' },
+  battery: { workW: '480', camFps: '60', features: 100, lkLevels: 3, lkIters: 6, cropMax: '600', pinWindow: 0.2, useWorker: true },
+  precise: { workW: '960', camRes: '1080', features: 220, lkRadius: 6, gridScale: '0.75', cropMax: '1400', pinWindow: 0.45 },
+};
+const TECH = ['camera', 'processing', 'ball', 'pins'];
+export function applyPreset(name) {
+  const pr = PRESETS[name]; if (!pr) return;
+  for (const sc of SCHEMA) if (TECH.includes(sc.group) && sc.key !== 'camDevice' && sc.key !== 'pocketMin' && sc.key !== 'pocketMax') values[sc.key] = sc.def;
+  Object.assign(values, pr);
+  values.preset = name;
+  try { localStorage.setItem(KEY, JSON.stringify(values)); } catch { /* */ }
+  listeners.forEach(f => f('*'));
+}
+
+// ---------- gespeicherte Profile ----------
+const PKEY = 'bt.profiles.v1';
+const readP = () => { try { return JSON.parse(localStorage.getItem(PKEY) || '{}'); } catch { return {}; } };
+const writeP = (o) => { try { localStorage.setItem(PKEY, JSON.stringify(o)); } catch { /* */ } };
+export function listProfiles() { return Object.entries(readP()).map(([name, p]) => ({ name, saved: p.saved })).sort((a, b) => b.saved - a.saved); }
+export function saveProfile(name) {
+  const o = readP();
+  const v = { ...values }; delete v.expertMode;
+  o[name] = { saved: Date.now(), values: v }; writeP(o);
+}
+export function loadProfile(name) { const o = readP(); if (o[name]) importSettings(o[name].values); }
+export function deleteProfile(name) { const o = readP(); delete o[name]; writeP(o); }

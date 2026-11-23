@@ -11,6 +11,8 @@ import { buildGame } from '../scoring.js';
 import { miniLane } from '../replay.js';
 import { pinPadSheet, speedStr, scoreCard, pinMini } from './common.js';
 import { openShot } from './history.js';
+import { mascot, setMood, mascotOn } from '../mascot.js';
+import { recommend, applyChanges } from '../autotune.js';
 
 const CAL_KEY = 'bt.calib.v1';
 let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, statusPill, framePill, bowlerPill, hud, shotCard, progress;
@@ -18,6 +20,7 @@ let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ba
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel;
+let optCollect = null, welcomeOpen = false;
 let wiz = null; // Einrichtungs-Assistent: { step, timer, preview, stable, target, busy }
 
 export function initLive(el) {
@@ -77,6 +80,7 @@ export async function showLive() {
   updateTop();
   const q = new URLSearchParams(location.search);
   if (q.get('video') && !fileMode) { await openVideoUrl(q.get('video'), q); return; }
+  if (!fileMode && !localStorage.getItem('bt.welcome') && !q.get('video')) showWelcome();
   if (!fileMode) await startCam();
   if (S.get('wakeLock') && navigator.wakeLock) try { wake = await navigator.wakeLock.request('screen'); } catch { /* */ }
 }
@@ -98,7 +102,7 @@ async function startCam() {
     proc.attach(video, cam.track);
     if (corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
-    if (!calibrated && S.get('autoWizard')) startWizard();
+    if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startWizard();
   } catch (e) {
     const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
     hint.style.display = 'grid'; hint.firstChild.textContent = msg + ' — ' + t('btn.file') + ' ↓';
@@ -288,8 +292,11 @@ async function wizScan() {
 function renderWizard() {
   if (!wiz) return;
   const st = wiz.step;
-  const dots = h('div.wiz-dots', null, [1, 2, 3, 4].map(i => h('i' + (i < st ? '.done' : i === st ? '.on' : ''))));
-  const head = h('div.cal-head', null, h('div', null, h('b', null, t('wiz.t' + st)), dots), h('button.iconbtn', { onclick: wizCancel, 'aria-label': t('btn.cancel') }, icon('close')));
+  const dots = h('div.wiz-dots', null, [1, 2, 3, 4, 5].map(i => h('i' + (i < st ? '.done' : i === st ? '.on' : ''))));
+  const moodOf = { 1: wiz.stable >= 2 ? 'happy' : 'look', 2: 'neutral', 3: 'look', 4: 'blink', 5: 'happy' };
+  wiz.mascotEl = mascotOn() ? mascot(moodOf[st], { head: true, cls: 'm-wiz' }) : null;
+  const head = h('div.cal-head', null, h('div.wiz-title', null, wiz.mascotEl, h('div', null, h('b', null, t('wiz.t' + st)), dots)),
+    h('button.skip', { onclick: wizCancel }, t('wiz.later')));
   calPanel.innerHTML = '';
   calPanel.append(head);
   if (st === 1) {
@@ -307,18 +314,21 @@ function renderWizard() {
           localStorage.setItem(CAL_KEY, JSON.stringify(corners));
           await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
           calBackup = null;
-          wizGo(state.bowler?.ballColor ? 4 : 3);
+          wizGo(3);
         } }, icon('check'), t('wiz.fits'))));
   } else if (st === 3) {
-    calPanel.append(h('p.cal-msg', null, t('wiz.m3')),
+    renderOptimize();
+    return;
+  } else if (st === 4) {
+    calPanel.append(h('p.cal-msg', null, t('wiz.m4')),
       h('div.cal-actions', null,
-        h('button.pillbtn', { onclick: () => wizGo(4) }, t('wiz.skip'))));
+        h('button.pillbtn', { onclick: () => wizGo(5) }, t('wiz.skip'))));
   } else {
     const bc = state.bowler?.ballColor?.rgb;
-    calPanel.append(h('p.cal-msg', null, t('wiz.m4')),
+    calPanel.append(h('p.cal-msg', null, t('wiz.m5')),
       h('div.lane-state.ok', null, h('i.dot'), t('wiz.ready'), bc ? h('span.swatch', { style: { background: `rgb(${bc})`, marginLeft: 'auto' } }) : null),
       h('div.cal-actions', null,
-        h('button.pillbtn', { onclick: () => wizGo(3) }, icon('ball'), t('btn.ball')),
+        h('button.pillbtn', { onclick: () => wizGo(4) }, icon('ball'), t('btn.ball')),
         h('button.pillbtn.primary.big', { onclick: () => {
           if (paused) togglePause();
           endMode(); setStatus('st.idle', 'ok'); buzz(40); toast(t('wiz.go'), 'ok');
@@ -333,11 +343,80 @@ function updateWizState() {
   wiz.stateEl.className = 'lane-state' + (ok ? ' ok' : '');
   wiz.stateEl.lastChild.textContent = ok ? t('wiz.found') : wiz.preview ? t('wiz.hold') : t('wiz.search');
   wiz.nextEl.disabled = !wiz.preview;
+  if (wiz.mascotEl) setMood(wiz.mascotEl, ok ? 'happy' : 'look');
 }
 function wizCancel() {
   if (calBackup) corners = calBackup;
   calBackup = null;
   endMode();
+}
+
+// ---------- Auto-Optimierung (Assistent-Schritt 3 und aus den Optionen) ----------
+function renderOptimize() {
+  const go = (to) => { optCollect = null; if (mode === 'wizard') wizGo(to); else endMode(); };
+  const next = () => go(state.bowler?.ballColor ? 5 : 4);
+  if (fileMode || !cam) {
+    calPanel.append(h('p.cal-msg', null, t('opt.noCam')), h('div.cal-actions', null, h('button.pillbtn.primary.big', { onclick: next }, t('wiz.next'))));
+    calPanel.style.display = 'block'; return;
+  }
+  const bar = h('div.optbar', null, h('i'));
+  calPanel.append(h('p.cal-msg', null, t('opt.measuring')), bar, h('div.cal-actions', null, h('button.pillbtn', { onclick: next }, t('wiz.skip'))));
+  calPanel.style.display = 'block';
+  optCollect = { samples: [], ms: [], t0: performance.now() };
+  const dur = 3500;
+  const tick = () => {
+    if (!optCollect) return;
+    const k = (performance.now() - optCollect.t0) / dur;
+    bar.firstChild.style.width = Math.min(100, k * 100) + '%';
+    if (k < 1) { requestAnimationFrame(tick); return; }
+    const camFps = proc?.stats?.cam || cam?.info?.fps || 30;
+    const rec = recommend(optCollect.samples, optCollect.ms, camFps, { videoW: video.videoWidth });
+    optCollect = null;
+    showRecommendation(rec, next);
+  };
+  requestAnimationFrame(tick);
+}
+function showRecommendation(rec, next) {
+  calPanel.querySelectorAll('.cal-msg, .optbar, .cal-actions').forEach(e => e.remove());
+  if (wiz?.mascotEl) setMood(wiz.mascotEl, rec.notes.includes('good') ? 'happy' : 'neutral');
+  const m = rec.measured;
+  const facts = h('div.facts', null,
+    h('div', null, h('small', null, t('opt.fCam')), h('b', null, m.camFps + ' fps')),
+    h('div', null, h('small', null, t('opt.fCpu')), h('b', null, m.ms + ' ms')),
+    h('div', null, h('small', null, t('opt.fLane')), h('b', null, m.lanePx + ' px')),
+    h('div', null, h('small', null, t('opt.fShake')), h('b', null, m.shake < 0.15 ? t('opt.still') : m.shake < 1.5 ? t('opt.slight') : t('opt.strong'))));
+  const ch = Object.entries(rec.changes);
+  const list = ch.length ? h('ul.changes', null, ch.map(([k, v]) => h('li', null, t('opt.' + k), ': ', h('b', null, String(v) in { hand: 1, tripod: 1 } ? t('val.' + v) : String(v))))) : h('p.cal-msg', null, t('opt.nothing'));
+  const notes = rec.notes.filter(x => x !== 'good').map(x => h('p.note', null, t('opt.n.' + x)));
+  calPanel.append(facts, list, ...notes, h('div.cal-actions', null,
+    h('button.pillbtn', { onclick: next }, t('opt.keep')),
+    ch.length ? h('button.pillbtn.primary.big', { onclick: () => { applyChanges(rec.changes); toast(t('opt.applied'), 'ok'); next(); } }, icon('check'), t('opt.apply')) : h('button.pillbtn.primary.big', { onclick: next }, t('wiz.next'))));
+}
+export function startOptimize() {
+  endMode();
+  mode = 'optimize';
+  dock.style.display = 'none'; shotCard.classList.add('hidden');
+  calPanel.innerHTML = '';
+  calPanel.append(h('div.cal-head', null, h('div.wiz-title', null, mascotOn() ? mascot('look', { head: true, cls: 'm-wiz' }) : null, h('b', null, t('wiz.t3'))), h('button.skip', { onclick: endMode }, t('btn.close'))));
+  renderOptimize();
+}
+
+// ---------- Begrüßung (nur beim allerersten Start, überspringbar) ----------
+function showWelcome() {
+  welcomeOpen = true;
+  const close = (setup) => {
+    welcomeOpen = false; el.classList.add('out'); setTimeout(() => el.remove(), 220);
+    try { localStorage.setItem('bt.welcome', '1'); } catch { /* */ }
+    if (setup) startWizard(); else sessionStorage.setItem('bt.skipWizard', '1');
+  };
+  const el = h('div.welcome', null, h('div.welcome-card', null,
+    mascotOn() ? mascot('happy', { cls: 'm-welcome' }) : null,
+    h('h2', null, t('w.title')),
+    h('ul', null, h('li', null, t('w.p1')), h('li', null, t('w.p2')), h('li', null, t('w.p3'))),
+    h('div.cal-actions', null,
+      h('button.pillbtn', { onclick: () => close(false) }, t('w.skip')),
+      h('button.pillbtn.primary.big', { onclick: () => close(true) }, t('w.start')))));
+  root.append(el);
 }
 
 // ---------- Kugelfarbe ----------
@@ -368,6 +447,7 @@ async function sampleBall(nx, ny) {
 
 function endMode() {
   if (wiz) { clearInterval(wiz.timer); wiz = null; }
+  optCollect = null;
   mode = 'live';
   calbar(false);
   handles.forEach(x => x.remove()); handles = [];
@@ -382,7 +462,7 @@ function onPointerDown(e) {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
     if (wiz.step === 1) { wiz.target = n; wiz.stable = 0; wiz.preview = null; updateWizState(); requestDraw(); toast(t('wiz.targetSet')); }
-    else if (wiz.step === 3) sampleBall(...n).then(() => { if (mode === 'wizard') wizGo(4); });
+    else if (wiz.step === 4) sampleBall(...n).then(() => { if (mode === 'wizard') wizGo(5); });
     return;
   }
   if (mode === 'calib' && pickLane) {
@@ -404,6 +484,7 @@ function onResult(m) {
   if (m.type === 'flushed') { for (const ev of m.events || []) handleEvent(ev); setStatus('st.idle', 'ok'); return; }
   if (m.type !== 'result') return;
   last = m;
+  if (optCollect) { if (m.metrics) optCollect.samples.push(m.metrics); if (m.ms) optCollect.ms.push(m.ms); }
   if (m.state !== 'nocal') calibrated = true;
   for (const ev of m.events || []) handleEvent(ev);
   if (mode === 'live') {

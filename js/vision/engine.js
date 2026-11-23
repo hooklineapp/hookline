@@ -649,8 +649,23 @@ export class Engine {
     const { w: rw, h: rh } = this.ref;
     const S = new Float64Array([1 / rw, 0, 0.5 / rw, 0, 1 / rh, 0.5 / rh, 0, 0, 1]);
     const ball = this.state === 'roll' && this.lastSeen === ts ? this.track[this.track.length - 1] : null;
+    // Messwerte für die Auto-Optimierung (alle 5 Bilder): Bewegung, Rauschen, Helligkeit, Bahnbreite am Pin
+    let metrics = null;
+    if (this.frameN % 5 === 0) {
+      const hp = (X) => apply(this.H, X, HEADPIN_Y), a = hp(0), b = hp(LANE_W);
+      const laneFarPx = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      let motion = 0;
+      if (this._lastHm) for (const [X, Y] of [[0, 0], [LANE_W, 0], [0, HEADPIN_Y], [LANE_W, HEADPIN_Y]]) {
+        const p1 = apply(this.H, X, Y), p0 = apply(this._lastHm, X, Y); motion = Math.max(motion, Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
+      }
+      this._lastHm = this.H;
+      let noise = 0, nn = 0, lum = 0, nl = 0;
+      if (this.grid) { const g = this.grid; for (let k = 0; k < g.n; k += 37) if (g.valid[k] && g.age[k] > 10) { noise += g.dev[k]; nn++; } }
+      const d = frame.data; for (let i = 0; i < d.length; i += 4 * 97) { lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; nl++; }
+      metrics = { laneFarPx, motion: motion / 5, noise: nn ? noise / nn : 0, lum: nl ? lum / nl : 0, w };
+    }
     const res = {
-      state: this.state, ok, quality: this.quality, lost: this.lost, active,
+      state: this.state, ok, quality: this.quality, lost: this.lost, active, metrics,
       H: Array.from(mul(S, this.H)), f: this.f / w,
       ball: ball ? { x: ball[1], y: ball[2], u: this.itrack[this.itrack.length - 1][1], v: this.itrack[this.itrack.length - 1][2] } : null,
       cands: cands.slice(0, 6).map(c => [(c.u + 0.5) / rw, (c.v + 0.5) / rh]),

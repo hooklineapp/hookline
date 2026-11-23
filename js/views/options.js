@@ -5,6 +5,7 @@ import * as S from '../settings.js';
 import * as db from '../db.js';
 import { state, setBowler, saveBowler, deleteBowler, newSession } from '../store.js';
 import { listCameras, scoreCamera } from '../camera.js';
+import { icon } from '../ui.js';
 
 let root;
 export function initOptions(el) { root = el; }
@@ -17,6 +18,8 @@ export async function showOptions() {
     h('div.seg', null,
       h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(); } }, t('o.normal')),
       h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(); } }, t('o.expert')))));
+  root.append(presetsCard());
+  root.append(profilesCard());
   root.append(await bowlersCard());
   for (const g of S.GROUPS) { const el = await groupEl(g, ex); if (el) root.append(el); }
   root.append(await dataCard());
@@ -129,4 +132,27 @@ async function exportData() {
 }
 function importData() {
   pickJson(async (o) => { const n = await db.importAll(o); toast(t('o.imported', { n }), 'ok'); location.reload(); });
+}
+
+function presetsCard() {
+  const cur = S.get('preset') || 'recommended';
+  const d = h('div.card', null,
+    h('div.row', { style: { marginBottom: '8px' } }, h('b', { style: { flex: 1 } }, t('o.presets')),
+      h('button', { onclick: () => { document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'live' })); setTimeout(async () => { const { startOptimize } = await import('./live.js'); startOptimize(); }, 700); } }, t('o.optimize'))),
+    h('p.muted', { style: { margin: '0 0 10px', fontSize: '13px' } }, t('o.presetsHint')),
+    h('div.presets', null, Object.keys(S.PRESETS).map(k => h('button.preset' + (k === cur ? '.on' : ''), {
+      onclick: () => { S.applyPreset(k); toast(t('o.presetSet', { p: t('p.' + k) }), 'ok'); showOptions(); },
+    }, h('b', null, t('p.' + k)), h('small', null, t('p.' + k + '.h'))))));
+  return d;
+}
+function profilesCard() {
+  const list = S.listProfiles();
+  const name = h('input.inp', { placeholder: t('o.profileName'), style: { flex: 1 } });
+  const rows = list.length ? list.map(p => h('div.profile-row', null, h('span', null, p.name),
+    h('button', { onclick: () => { S.loadProfile(p.name); toast(t('o.profileLoaded'), 'ok'); showOptions(); } }, t('o.load')),
+    h('button', { onclick: async () => { if (await confirmBox(p.name + ' ' + t('btn.delete') + '?')) { S.deleteProfile(p.name); showOptions(); } }, 'aria-label': t('btn.delete') }, '✕'))) : [h('p.muted', { style: { margin: '4px 0', fontSize: '13px' } }, t('o.noProfiles'))];
+  return h('details.grp', null, h('summary', null, t('o.profiles')),
+    h('div', { style: { padding: '4px 16px 12px' } }, rows,
+      h('div.row', { style: { marginTop: '10px' } }, name,
+        h('button.primary', { onclick: () => { const n = name.value.trim(); if (!n) { name.focus(); return; } S.saveProfile(n); toast(t('o.profileSaved'), 'ok'); showOptions(); } }, t('btn.save')))));
 }
