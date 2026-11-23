@@ -494,3 +494,8 @@ details.grp[open] > summary { border-bottom: 1px solid var(--line); }
 .topbar .chip.game b { font-size: 12.5px; font-weight: 600; }
 .topbar .score-badge { position: static; margin-left: 2px; padding: 0 6px; font-size: 10.5px; line-height: 16px; box-shadow: none; }
 .topbar .avatar { width: 30px; height: 30px; font-size: 11px; font-weight: 600; box-shadow: inset 0 0 0 2px var(--ring, rgba(255,255,255,.3)) !important; }
+
+/* Update-Hinweis: nur ein kleiner Punkt */
+#tabs button { position: relative; }
+#tabs button.has-update::after { content: ''; position: absolute; top: 6px; left: calc(50% + 9px); width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px var(--bar); }
+.upd-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); margin-left: 8px; vertical-align: middle; }

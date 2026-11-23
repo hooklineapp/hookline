@@ -109,7 +109,21 @@ async function dataCard() {
   return d;
 }
 function aboutCard() {
-  return h('details.grp', null, h('summary', null, t('o.about')),
+  const status = h('span.muted', { style: { fontSize: '13px' } }, '');
+  const btn = h('button', { onclick: async () => {
+    btn.disabled = true; status.textContent = t('u.checking');
+    const { checkUpdate, applyUpdate } = await import('../update.js');
+    const u = await checkUpdate();
+    btn.disabled = false;
+    if (u.offline) { status.textContent = t('u.offline'); return; }
+    if (!u.available) { status.textContent = t('u.current'); return; }
+    status.textContent = t('u.available', { v: u.latest });
+    btn.textContent = t('u.install'); btn.classList.add('primary');
+    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); await applyUpdate(); };
+  } }, t('u.check'));
+  const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
+  return h('details.grp', { open: hasUpd }, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
+    h('div.opt', null, h('span', null, t('u.title'), h('br'), status), btn),
     h('div.opt', null, h('span', null, t('o.install')), h('span')),
     h('div.opt', null, h('div.hint', null, t('o.installHint'))),
     h('div.opt', null, h('span', null, t('misc.version')), h('span.muted', null, window.BT_VERSION || '')));

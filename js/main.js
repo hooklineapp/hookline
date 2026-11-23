@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.8.0';
+window.BT_VERSION = '1.8.1';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac) S.set('accent', ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
@@ -57,8 +57,11 @@ document.addEventListener('visibilitychange', () => {
 })();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !/[?&]nosw/.test(location.search)) {
-  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update?.()).catch(() => { });
-  // neue Version aktiv -> einmal neu laden, damit alle Dateien zusammenpassen
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && navigator.serviceWorker.controller) { reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { });
 }
+// leise prüfen, ob es eine neuere Fassung gibt -> nur ein kleiner Punkt am Optionen-Tab
+setTimeout(async () => {
+  const { checkUpdate } = await import('./update.js');
+  const u = await checkUpdate();
+  if (u.available) document.querySelector('#tabs [data-tab="options"]')?.classList.add('has-update');
+}, 3000);
