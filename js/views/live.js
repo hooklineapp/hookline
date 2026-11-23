@@ -164,7 +164,7 @@ function calbar(show) {
   const steps = h('div.steps', null, names.map((nm, i) => h((n === 4 ? 'button' : 'div') + '.step' + (i < n ? '.done' : i === n && !pickLane ? '.cur' : '') + (n === 4 && i === selCorner ? '.sel' : ''),
     n === 4 ? { type: 'button', onclick: () => { selCorner = selCorner === i ? -1 : i; placeHandles(); calbar(true); } } : null,
     h('b', null, i < n ? (n === 4 && i === selCorner ? i + 1 : '✓') : i + 1), h('span', null, nm))));
-  const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tap', { p: names[n] }) : selCorner >= 0 ? t('cal.moveSel', { p: names[selCorner] }) : t('cal.moveAny');
+  const msg = pickLane ? t('cal.pick') : n < 4 ? t('cal.tapAny', { n: n + 1 }) : selCorner >= 0 ? t('cal.moveSel', { p: names[selCorner] }) : t('cal.moveAny');
   calPanel.append(
     h('div.cal-head', null, h('b', null, t('cal.title')), h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close'))),
     steps, h('p.cal-msg', null, msg),
@@ -263,11 +263,28 @@ async function finishCalib() {
 }
 // Ecken in die feste Reihenfolge bringen: Foul-Linie (unten im Bild) links/rechts, dann Kopfpins links/rechts.
 // Verhindert eine über Kreuz eingemessene Bahn, wenn die Ecken in anderer Reihenfolge getippt wurden.
+// Ecken in beliebiger Reihenfolge: Rollen aus der Form bestimmen (Foul-Linie links/rechts, Kopfpin-Linie links/rechts).
+// Die vier Punkte werden zum Viereck geordnet; die beiden längeren gegenüberliegenden Seiten sind die Bahnkanten,
+// von den kurzen Seiten ist die breitere die Foul-Linie (näher an der Kamera). Links/rechts aus der Blickrichtung.
 function orderCorners(c) {
   if (!c || c.length !== 4) return c;
-  const s = c.map(p => [...p]).sort((a, b) => b[1] - a[1]);
-  const foul = s.slice(0, 2).sort((a, b) => a[0] - b[0]), top = s.slice(2).sort((a, b) => a[0] - b[0]);
-  return [foul[0], foul[1], top[0], top[1]];
+  const [vw, vh] = vidSize(), px = c.map(([x, y]) => [x * vw, y * vh]);
+  const cx = px.reduce((s, p) => s + p[0], 0) / 4, cy = px.reduce((s, p) => s + p[1], 0) / 4;
+  const ord = [0, 1, 2, 3].sort((i, j) => Math.atan2(px[i][1] - cy, px[i][0] - cx) - Math.atan2(px[j][1] - cy, px[j][0] - cx));
+  const L = (i, j) => Math.hypot(px[ord[i]][0] - px[ord[j]][0], px[ord[i]][1] - px[ord[j]][1]);
+  // Seitenpaare: (0-1, 2-3) oder (1-2, 3-0); Bahnkanten = längeres Paar
+  const pairA = L(0, 1) + L(2, 3), pairB = L(1, 2) + L(3, 0);
+  const short = pairA > pairB ? [[1, 2], [3, 0]] : [[0, 1], [2, 3]];
+  const len = (s) => L(s[0], s[1]), meanY = (s) => (px[ord[s[0]]][1] + px[ord[s[1]]][1]) / 2;
+  let [foul, top] = short;
+  const lf = len(foul), lt = len(top);
+  if (lt > lf * 1.05 || (Math.abs(lt - lf) <= lf * 0.05 && meanY(top) > meanY(foul))) [foul, top] = [top, foul];
+  const mid = (s) => [(px[ord[s[0]]][0] + px[ord[s[1]]][0]) / 2, (px[ord[s[0]]][1] + px[ord[s[1]]][1]) / 2];
+  const mf = mid(foul), mt = mid(top), up = [mt[0] - mf[0], mt[1] - mf[1]];
+  // links: negatives Kreuzprodukt (Bildkoordinaten, y nach unten)
+  const lr = (s, m) => { const [i, j] = s.map(k => ord[k]); const cr = (q) => up[0] * (px[q][1] - m[1]) - up[1] * (px[q][0] - m[0]); return cr(i) < cr(j) ? [i, j] : [j, i]; };
+  const [fl, fr] = lr(foul, mf), [tl, tr] = lr(top, mt);
+  return [fl, fr, tl, tr].map(i => [...c[i]]);
 }
 async function calibrateNow(bmp) {
   bmp = bmp || await grabFrame();
@@ -514,7 +531,7 @@ function onPointerDown(e) {
   } else if (mode === 'calib' && corners.length < 4) {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
-    corners.push(n); placeHandles(); calbar(true); requestDraw();
+    corners.push(n); if (corners.length === 4) { corners = orderCorners(corners); selCorner = -1; } placeHandles(); calbar(true); requestDraw();
     showLoupe(...toScreen(...n)); setTimeout(() => { loupe.style.display = 'none'; }, 700);
   } else if (mode === 'ball') {
     const n = toNorm(e.clientX, e.clientY);

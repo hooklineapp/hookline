@@ -58,6 +58,7 @@ export const SCHEMA = [
   S('maxMissLong', 'range', E.maxMissLong, { group: 'ball', min: 0.3, max: 3, step: 0.1, engine: true }),
   S('topEdge', 'bool', E.topEdge, { group: 'ball', engine: true }),
   S('maxMiss', 'range', E.maxMiss, { group: 'ball', min: 0.1, max: 1.5, step: 0.05, engine: true }),
+  S('motionFallback', 'bool', E.motionFallback, { group: 'ball', engine: true }),
   S('sizeTolLo', 'range', E.sizeTolLo, { group: 'ball', min: 0.1, max: 0.9, step: 0.05, engine: true }),
   S('sizeTolHi', 'range', E.sizeTolHi, { group: 'ball', min: 1.2, max: 5, step: 0.1, engine: true }),
   S('smooth', 'range', 40, { group: 'ball', min: 1, max: 400, step: 1 }),

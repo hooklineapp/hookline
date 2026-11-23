@@ -158,7 +158,7 @@ export function simulatePins(shot, an, opts = {}) {
     }
   }
   const measured = Object.values(src).filter(s => s === 'mess').length;
-  return { frames, dur: DUR, simulated: true, mixed: measured > 0, measured, src, fit };
+  return { frames, dur: DUR, simulated: true, mixed: measured > 0, measured, src, fit, params: P };
 }
 
 // Zustand zur Zeit t (Sekunden ab Start der Simulation) mit Kippwinkel (0 = steht, 1 = liegt)

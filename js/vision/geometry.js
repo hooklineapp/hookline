@@ -187,5 +187,5 @@ export function cameraFromH(H, w, h, fGuess) {
   const planeH = (z0) => scale1(new Float64Array([H[0], H[1], H[2] + z0 * m3[0], H[3], H[4], H[5] + z0 * m3[1], H[6], H[7], H[8] + z0 * m3[2]]));
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const camPos = [-dot(r1, t), -dot(r2, t), -dot(r3, t)]; // C = -R^T t
-  return { f, cx, cy, r1, r2, r3, t, P, planeH, camPos };
+  return { f, cx, cy, r1, r2, r3, t, P, planeH, camPos, H, m3 };
 }

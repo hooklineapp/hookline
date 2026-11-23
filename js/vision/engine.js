@@ -24,7 +24,8 @@ export const ENGINE_DEFAULTS = {
   // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
   // Nachbarschaftsvergleich (nbPx) und weiche Kugelfarbe im Lauf sind aus, weil sie saubere Aufnahmen verschlechtern
   gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
-  colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
+  colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,
+  motionFallback: false, motionSeedSize: 0.8, motionSeedExtra: 4,   // Wurfstart über Bewegung, wenn die Kugelfarbe nicht passt   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
   cooldown: 3.0, debug: false,
 };
 
@@ -74,7 +75,7 @@ export class Engine {
   setPinsBefore(list) { this.pinsBefore = list && list.length ? [...list] : [...PIN_IDS]; }
   resetShot() {
     this.state = this.ref ? 'idle' : 'nocal';
-    this.seed = []; this.track = []; this.itrack = []; this.miss = 0;
+    this.seed = []; this.seedM = []; this.motionTrack = false; this.track = []; this.itrack = []; this.miss = 0;
     this.pinMeas = []; this.tImpact = null; this.tStart = null; this.lastPinRefT = -1e9;
     this.pinSeries = []; this._ptRef = null;
   }
@@ -449,9 +450,9 @@ export class Engine {
   }
 
   // Startkandidaten sammeln: mehrere Bilder in Folge mit Vorwärtsbewegung
-  _seedStep(cands, ts, seed) {
+  _seedStep(cands, ts, seed, anyColor) {
     const o = this.o;
-    const zone = cands.filter(c => c.colorOk && c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
+    const zone = cands.filter(c => (anyColor ? c.size < o.motionSeedSize : c.colorOk) && c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
     let best = null;
     if (seed.length) {
       const [lt, lx, ly] = seed[seed.length - 1];
@@ -477,7 +478,7 @@ export class Engine {
   _startRoll(seed, ts, ev, restart) {
     this.state = 'roll'; this.track = seed.map(p => [p[0], p[1], p[2]]);
     this.itrack = seed.map(p => [p[0], (p[3] + 0.5) / this.ref.w, (p[4] + 0.5) / this.ref.h]);
-    this.tStart = seed[0][0]; this.lastSeen = ts; this.alt = [];
+    this.tStart = seed[0][0]; this.lastSeen = ts; this.alt = []; this.seedM = [];
     if (!restart) this.pinRef = this.pinRefCand;
     ev.push({ type: restart ? 'restart' : 'start', t: this.tStart });
   }
@@ -486,7 +487,11 @@ export class Engine {
     const o = this.o;
     if (this.state === 'idle') {
       this.seed = this._seedStep(cands, ts, this.seed);
-      if (this._seedReady(this.seed)) this._startRoll(this.seed, ts, ev);
+      // Ersatzweg: Kugelfarbe passt nicht (durchsichtig, Glitzer, Unschärfe, Farbstich) -> Start über Bewegung allein,
+      // dafür mit mehr Bildern und guter Größe. Die Farbe zählt danach nur noch als Bonus.
+      if (o.motionFallback && this.ballColor) this.seedM = this._seedStep(cands, ts, this.seedM || [], true);
+      if (this._seedReady(this.seed)) { this.motionTrack = false; this._startRoll(this.seed, ts, ev); }
+      else if (this.seedM && this.seedM.length >= o.startFrames + o.motionSeedExtra && this.seed.length < 2 && this._seedReady(this.seedM)) { this.motionTrack = true; this._startRoll(this.seedM, ts, ev); }
     } else if (this.state === 'roll') {
       const v = this._fitVel(this.track);
       const dt = ts - this.track[this.track.length - 1][0];
@@ -498,8 +503,8 @@ export class Engine {
       for (const c of cands) {
         const ey = Math.abs(c.Y - py), ex = Math.abs(c.X - px);
         if (ey > gy || ex > gx) continue;
-        if (!c.colorOk && !o.colorSoft) continue;
-        const sc = ey / gy + ex / gx + c.size * 0.5 + (c.colorOk ? 0 : 0.8);
+        if (!c.colorOk && !o.colorSoft && !this.motionTrack) continue;
+        const sc = ey / gy + ex / gx + c.size * 0.5 + (c.colorOk ? 0 : this.motionTrack ? 0.3 : 0.8);
         if (!best || sc < best.sc) best = { c, sc };
       }
       if (!best) {
