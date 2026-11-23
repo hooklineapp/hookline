@@ -412,22 +412,22 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 /* ---------- Design: Pin (weiß, schwarze Kontur, zwei rote Querstreifen wie die Figur) ---------- */
 :root[data-style="pin"] {
   --bg: #ffffff; --bg2: #f2f2f2; --card: #ffffff; --ink: #111111; --ink2: #2b2b2b; --mute: #6b6b6b; --line: #e6e6e6;
-  --acc: #e3202f; --acc2: #b91c1c; --acc-soft: #fdeaec; --grad: #e3202f;
+  --acc: #e3202f; --acc2: #b91c1c; --acc-soft: #fdeaec; --grad: #e3202f; --frame: #5f5f5f;
   --r: 18px; --sh: none; --sh-lg: 0 10px 34px rgba(0, 0, 0, .14);
   --glass: #ffffff; --panel: #ffffff; --bar: #ffffff;
 }
 :root[data-style="pin"][data-theme="dark"] {
   --bg: #121212; --bg2: #1e1e1e; --card: #181818; --ink: #f5f5f5; --ink2: #d8d8d8; --mute: #9a9a9a; --line: #2c2c2c;
-  --acc: #ff3b47; --acc-soft: rgba(255, 59, 71, .14); --grad: #ff3b47; --glass: #181818; --panel: #181818; --bar: #181818;
+  --acc: #ff3b47; --acc-soft: rgba(255, 59, 71, .14); --grad: #ff3b47; --frame: #a8a8a8; --glass: #181818; --panel: #181818; --bar: #181818;
 }
 :root[data-style="pin"] * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 :root[data-style="pin"] .card, :root[data-style="pin"] .item, :root[data-style="pin"] .tile, :root[data-style="pin"] details.grp,
 :root[data-style="pin"] .score, :root[data-style="pin"] .replay, :root[data-style="pin"] .chip, :root[data-style="pin"] .avatar,
-:root[data-style="pin"] .dock, :root[data-style="pin"] .calpanel, :root[data-style="pin"] .shotcard, :root[data-style="pin"] .welcome-card { border: 2.5px solid var(--ink); box-shadow: none; }
+:root[data-style="pin"] .dock, :root[data-style="pin"] .calpanel, :root[data-style="pin"] .shotcard, :root[data-style="pin"] .welcome-card { border: 2px solid var(--frame); box-shadow: none; }
 :root[data-style="pin"] .tile:first-child { background: var(--card); color: var(--ink); }
 :root[data-style="pin"] .tile:first-child small { color: var(--mute); }
 :root[data-style="pin"] .tile:first-child b { color: var(--acc); }
-:root[data-style="pin"] .fab { background: var(--acc); box-shadow: none; border: 2.5px solid var(--ink); }
+:root[data-style="pin"] .fab { background: var(--acc); box-shadow: none; border: 2px solid var(--frame); }
 :root[data-style="pin"] .pillbtn.primary, :root[data-style="pin"] button.primary { background: var(--acc); box-shadow: none; }
 :root[data-style="pin"] #tabs button.active { background: transparent; color: var(--acc); }
 /* Streifen 1: zwei rote Querstreifen über der unteren Leiste */
