@@ -137,6 +137,7 @@ function aboutCard() {
     h('div.opt', null, h('span', null, t('u.title'), h('br'), status), btn),
     h('div.opt', null, h('span', null, t('o.install')), h('span')),
     h('div.opt', null, h('div.hint', null, t('o.installHint'))),
+    h('div.opt', null, h('span', null, t('o.tech')), h('a.pillbtn', { href: 'technik.html', target: '_blank', rel: 'noopener' }, t('o.techOpen'))),
     h('div.opt', null, h('span', null, t('misc.version')), h('span.muted', null, window.BT_VERSION || ''))), 'about', !!hasUpd);
 }
 function download(name, text) {

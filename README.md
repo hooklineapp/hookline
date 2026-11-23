@@ -5,6 +5,8 @@ Die App erkennt Laufweg, Tempo, Bretter (Foul-Linie, Punkte, Pfeile, Breakpoint,
 Hook, Pocket-Treffer und die stehenden Pins. Sie führt den Punktezettel und zeigt Replays ohne Video (Draufsicht
 und nachgebaute Kamerasicht). Alles bleibt auf dem Gerät (IndexedDB), Export/Import als JSON.
 
+Wie Bahn-, Kugel- und Pin-Erkennung funktionieren, erklärt die [Technik-Seite](https://hooklineapp.github.io/hookline/technik.html) mit Diagrammen und Bildern.
+
 ## Bedienung
 1. **Ecken**: Das Bild friert ein. Tippe die 4 Bahnecken: Foul-Linie links, rechts, dann Kopfpin-Höhe links, rechts
    (in den Optionen auf „Bahnende“ umstellbar). Feinjustieren durch Ziehen, mit Lupe.
