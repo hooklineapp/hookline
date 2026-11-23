@@ -1,4 +1,4 @@
-// Maskottchen "Pinni": der Pin aus dem Logo, Variante B (große ovale Augen ohne Pupille, kein Mund).
+// Maskottchen (ohne Namen): der Pin aus dem Logo, Variante B (große ovale Augen ohne Pupille, kein Mund).
 // Stimmungen ändern nur Augen (und beim Staunen einen kleinen Mund).
 import * as S from './settings.js';
 
