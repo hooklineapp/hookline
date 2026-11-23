@@ -19,7 +19,7 @@ let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, stat
 let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ball
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
-let quietUntil = 0;   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
+let quietUntil = 0, calPos = null;   // calPos: frei gezogene Höhe des Ecken-Menüs (px)   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
@@ -147,7 +147,7 @@ function unfreeze() { stage.classList.remove('frozen'); freezeBmp?.close?.(); fr
 
 async function startCalib() {
   endMode();
-  mode = 'calib'; selCorner = -1; calSideManual = false; calTop = true;
+  mode = 'calib'; selCorner = -1; calSideManual = false; calTop = true; calPos = null;
   calBackup = corners.length === 4 ? corners.map(c => [...c]) : null;
   if (S.get('freezeOnCalib')) await doFreeze();
   if (corners.length !== 4) corners = [];
@@ -179,10 +179,27 @@ function calbar(show) {
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
   calPanel.style.display = 'block';
-  setCalSide(calTop); autoCalSide();
+  calPanel.querySelector('.cal-head').addEventListener('pointerdown', dragPanel);
+  if (calPos != null) placePanel(calPos); else { setCalSide(calTop); autoCalSide(); }
+}
+// Menü am Kopf frei nach oben/unten ziehen
+function placePanel(y) {
+  const P = calPanel.offsetParent || root, maxY = Math.max(0, P.clientHeight - calPanel.offsetHeight - 4);
+  calPos = Math.max(4, Math.min(maxY, y));
+  calPanel.style.top = calPos + 'px'; calPanel.style.bottom = 'auto';
+  stage.parentElement?.classList.toggle('cal-top', calPos < 60);
+}
+function dragPanel(e) {
+  if (e.target.closest('button')) return;
+  e.preventDefault(); calSideManual = true;
+  const el = e.currentTarget, y0 = e.clientY, top0 = calPanel.offsetTop;
+  el.setPointerCapture(e.pointerId); calPanel.classList.add('drag');
+  const move = (ev) => placePanel(top0 + ev.clientY - y0);
+  const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); calPanel.classList.remove('drag'); };
+  el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 }
 // Menü oben oder unten – nie über den Ecken, die man gerade setzt oder schiebt
-function setCalSide(top) { calTop = top; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); }
+function setCalSide(top) { calTop = top; calPos = null; calPanel.style.top = ''; calPanel.style.bottom = ''; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); }
 function autoCalSide(pt) {
   if (calSideManual || calPanel.style.display === 'none') return;
   const R = viewRect(), pr = calPanel.getBoundingClientRect(), H = pr.height + 24;
@@ -263,6 +280,17 @@ function showLoupe(x, y) {
   lctx.imageSmoothingEnabled = false;
   lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 240, 240);
   try { lctx.drawImage(src, nx * vw - sz / 2, ny * vh - sz / 2, sz, sz, 0, 0, 240, 240); } catch { /* */ }
+  // Bahnkanten zu den anderen Ecken zur Orientierung (gleiche Linien wie im großen Bild)
+  if (corners.length >= 2) {
+    const k = 240 / sz, L = (c) => [120 + (c[0] - nx) * vw * k, 120 + (c[1] - ny) * vh * k];
+    const edges = corners.length === 4 ? [[0, 1], [1, 3], [3, 2], [2, 0]] : corners.slice(1).map((_, i) => [i, i + 1]);
+    lctx.setLineDash([]); lctx.lineCap = 'round';
+    for (const [col, lw] of [['rgba(0,0,0,.55)', 4], ['#4f8cff', 2]]) {
+      lctx.strokeStyle = col; lctx.lineWidth = lw; lctx.beginPath();
+      for (const [i, j] of edges) { const A = L(corners[i]), B = L(corners[j]); lctx.moveTo(A[0], A[1]); lctx.lineTo(B[0], B[1]); }
+      lctx.stroke();
+    }
+  }
   lctx.strokeStyle = '#ff0'; lctx.lineWidth = 1.5;
   lctx.beginPath(); lctx.moveTo(120, 100); lctx.lineTo(120, 140); lctx.moveTo(100, 120); lctx.lineTo(140, 120); lctx.stroke();
   loupe.style.display = 'block';

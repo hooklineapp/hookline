@@ -99,6 +99,10 @@ button.icon { padding: 6px 10px; font-size: 18px; }
 .calpanel.top { bottom: auto; top: calc(10px + var(--safe-t)); }
 .cal-top .topbar { opacity: 0; pointer-events: none; }
 .cal-hbtns { display: inline-flex; gap: 6px; }
+.calpanel .cal-head { cursor: grab; touch-action: none; position: relative; padding-top: 6px; }
+.calpanel .cal-head::before { content: ''; position: absolute; left: 50%; top: -4px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--line); }
+.calpanel.drag { animation: none; transition: none; box-shadow: 0 18px 40px rgba(0,0,0,.35); }
+.calpanel.drag .cal-head { cursor: grabbing; }
 .calpanel { padding: 10px 12px 10px; }
 .calpanel .cal-head { margin-bottom: 4px; }
 .calpanel .cal-msg { margin: 6px 2px 8px; font-size: 13px; }

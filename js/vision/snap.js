@@ -74,10 +74,10 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
       const t = prof[bt][0] + Math.max(-1, Math.min(1, off)) * 0.25;
       pts.push([p[0] + dx * t, p[1] + dy * t]);
     }
-    if (pts.length < 12) return null;
-    const L = fitLine(pts);
-    if (!L || L.n < 10 || L.rms > 1.2) return null;
-    sides.push(L);
+    // unsichere Kante: getippte Linie behalten (statt alles zu verwerfen)
+    const st = opt.strict !== false;
+    const L = pts.length >= (st ? 12 : 10) ? fitLine(pts) : null;
+    sides.push(L && L.n >= (st ? 10 : 8) && L.rms <= (st ? 1.2 : 1.5) ? L : null);
   }
   // Foul-Linie: dunkler Streifen; Suche längs der Bahn
   let foul = lineThrough(img[0], img[1]);
@@ -96,28 +96,43 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
     }
     if (n && sum / n - lo > (opt.minContrast ?? 12) * 1.5) fp.push([p[0] + dx * lt, p[1] + dy * lt]);
   }
-  if (fp.length >= 8) { const L = fitLine(fp); if (L && L.rms < 1.0 && L.n >= 6) foul = L; }
+  let foulOk = false;
+  if (fp.length >= 8) { const L = fitLine(fp); if (L && L.rms < 1.0 && L.n >= 6) { foul = L; foulOk = true; } }
+  if (!sides[0] && !sides[1] && !foulOk) return null;
+  if (opt.strict !== false && (!sides[0] || !sides[1])) return null;   // Kalibrierung: nur mit beiden Kanten
+  const left = sides[0] || lineThrough(img[0], img[2]), right = sides[1] || lineThrough(img[1], img[3]);
   const top = lineThrough(img[2], img[3]);
-  const c = [intersect(sides[0], foul), intersect(sides[1], foul), intersect(sides[0], top), intersect(sides[1], top)];
-  if (c.some(p => !p)) return null;
+  const c = [intersect(left, foul), intersect(right, foul), intersect(left, top), intersect(right, top)];
   const maxMove = opt.maxMove ?? Math.max(6, 0.025 * w);
-  if (c.some((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1]) > maxMove)) return null;
-  return { corners: c, rms: [sides[0].rms, sides[1].rms] };
+  // Ecke, die unplausibel weit springen würde, bleibt wo sie war
+  let moved = 0;
+  if (opt.strict !== false && c.some((p, i) => !p || Math.hypot(p[0] - img[i][0], p[1] - img[i][1]) > maxMove)) return null;
+  const out = c.map((p, i) => { if (!p || !isFinite(p[0]) || Math.hypot(p[0] - img[i][0], p[1] - img[i][1]) > maxMove) return img[i]; moved++; return p; });
+  if (!moved) return null;
+  return { corners: out, found: { left: !!sides[0], right: !!sides[1], foul: foulOk }, rms: [sides[0]?.rms, sides[1]?.rms] };
 }
 
 // Grob gesetzte Ecken (normalisiert, Reihenfolge FoulL, FoulR, ObenL, ObenR) auf die Bahnkanten ziehen.
 // Zwei Durchgänge, damit auch etwas weiter daneben gesetzte Punkte gefunden werden. Ergebnis normalisiert.
 export function snapNormalized(gray, w, h, corners, yTop) {
-  let img = corners.map(([x, y]) => [x * w - 0.5, y * h - 0.5]);
-  let ok = false;
-  for (let pass = 0; pass < 3; pass++) {
-    // erst breit suchen (grob gesetzt), dann eng verfeinern
-    const r = snapCorners(gray, w, h, img, yTop, { maxMove: Math.max(10, 0.06 * w), searchM: pass === 0 ? 0.2 : 0.08, foulM: pass === 0 ? 0.5 : 0.15 });
-    if (!r) { if (pass === 0) continue; break; }
-    const moved = Math.max(...r.corners.map((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1])));
-    img = r.corners; ok = true;
-    if (moved < 0.5) break;
-  }
-  if (!ok) return { error: 'nosnap' };
-  return { corners: img.map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]) };
+  const img0 = corners.map(([x, y]) => [x * w - 0.5, y * h - 0.5]);
+  const once = (start) => {
+    let img = start, ok = false;
+    for (let pass = 0; pass < 3; pass++) {
+      // erst breit suchen (grob gesetzt), dann eng verfeinern
+      const r = snapCorners(gray, w, h, img, yTop, { strict: false, maxMove: Math.max(10, 0.06 * w), searchM: pass === 0 ? 0.2 : 0.08, foulM: pass === 0 ? 0.5 : 0.15 });
+      if (!r) { if (pass === 0) continue; break; }
+      const moved = Math.max(...r.corners.map((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1])));
+      img = r.corners; ok = true;
+      if (moved < 0.5) break;
+    }
+    return ok ? img : null;
+  };
+  // von mehreren leicht versetzten Startpunkten aus einrasten, je Ecke den Median nehmen (Ausreißer fallen raus)
+  const j = 0.012 * Math.max(w, h), offs = [[0, 0], [j, 0], [-j, 0], [0, j], [0, -j], [j, j], [-j, -j], [j, -j], [-j, j]];
+  const res = offs.map(([dx, dy]) => once(img0.map(([x, y]) => [x + dx, y + dy]))).filter(Boolean);
+  if (!res.length) return { error: 'nosnap' };
+  const med = (a) => { const s = [...a].sort((p, q) => p - q), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const out = img0.map((_, i) => [med(res.map(r => r[i][0])), med(res.map(r => r[i][1]))]);
+  return { corners: out.map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]) };
 }
