@@ -12,6 +12,7 @@ export function initOptions(el) { root = el; }
 
 export async function showOptions(keepLook) {
   if (!keepLook) lookOpen = false;
+  const keepY = keepLook ? root.scrollTop : 0;
   root.innerHTML = '';
   root.append(h('h2', null, t('o.title')));
   const ex = !!S.get('expertMode');
@@ -26,6 +27,7 @@ export async function showOptions(keepLook) {
   root.append(await dataCard());
   root.append(aboutCard());
   root.append(lookCard());
+  if (keepY) root.scrollTop = keepY;
 }
 
 async function bowlersCard() {
@@ -176,9 +178,12 @@ function profilesCard() {
 function lookCard() {
   const th = S.get('theme'), st = S.get('uiStyle');
   const pick = (key, vals, cur, label) => h('div.choice', null, vals.map(v => h('button' + (v === cur ? '.on' : ''), { onclick: () => { S.set(key, v); showOptions(true); } }, label(v))));
-  const color = h('input', { type: 'color', value: S.get('accentColor') || '#4f46e5', style: { position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' },
-    oninput: (e) => S.set('accentColor', e.target.value), onchange: () => showOptions(true) });
-  const colorBtn = h('button.colorbtn', { onclick: () => color.click() }, h('span.swatch', { style: { background: S.get('accentColor') || '#4f46e5' } }), t('o.pickColor'), color);
+  const colorBtn = h('button.colorbtn', { onclick: async () => {
+    const { pickColor } = await import('../colorpicker.js');
+    const before = S.get('accentColor') || '#4f46e5';
+    const c = await pickColor(before, (x) => { document.documentElement.style.setProperty('--acc', x); });
+    S.set('accentColor', c || before); showOptions(true);
+  } }, h('span.swatch', { style: { background: S.get('accentColor') || '#4f46e5' } }), t('o.pickColor'));
   const d = h('details.grp', { open: !!lookOpen, ontoggle: (e) => { lookOpen = e.target.open; } }, h('summary', null, t('o.look')),
     h('div.opt', null, h('label', null, t('opt.theme')), pick('theme', ['auto', 'light', 'dark'], th, v => t('val.' + v))),
     h('div.opt.col', null, h('label', null, t('opt.uiStyle')), pick('uiStyle', ['glass', 'flat', 'soft', 'sport', 'pin'], st, v => t('val.' + v)), h('div.hint', null, t('d.' + st))),
