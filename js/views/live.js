@@ -10,7 +10,7 @@ import { state, addShot, currentPosition, newGame, onStore, updateShot, gameShot
 import { buildGame } from '../scoring.js';
 import { miniLane } from '../replay.js';
 import { pinPadSheet, speedStr, scoreCard, pinMini } from './common.js';
-import { openShot } from './history.js';
+import { openShot, openSession } from './history.js';
 import { mascot, setMood, mascotOn } from '../mascot.js';
 import { recommend, applyChanges } from '../autotune.js';
 
@@ -520,7 +520,7 @@ async function handleEvent(ev) {
     buzz(60); beep(990, 0.12);
     if (!S.get('autoSave') && !confirm(t('btn.save') + '?')) return;
     const shot = await addShot(ev.shot, { source: fileMode ? 'file' : 'camera' });
-    if (fileMode) fileShots++;
+    if (fileMode) { fileShots++; fileShotList.push(shot); }
     if (!shot.pinsAfter || S.get('confirmShots')) {
       const v = await pinPadSheet(shot.pinsBefore, shot.pinsAfter ?? shot.pinsBefore, shot.pinDetail);
       if (v) { shot.pinsAfter = v; shot.pinsManual = true; await updateShot(shot); }
@@ -619,10 +619,10 @@ function pickFile() {
   inp.onchange = () => { const f = inp.files[0]; if (f) openVideoUrl(URL.createObjectURL(f), new URLSearchParams()); };
   inp.click();
 }
-let camCorners = null, fileShots = 0;
+let camCorners = null, fileShots = 0, fileShotList = [];
 async function openVideoUrl(url, q) {
   if (!fileMode) camCorners = corners.length === 4 ? corners.map(c => [...c]) : null;
-  fileMode = true; fileStop = true; fileShots = 0;
+  fileMode = true; fileStop = true; fileShots = 0; fileShotList = [];
   await new Promise(r => setTimeout(r, 50));
   fileStop = false; calibrated = false; unfreeze();
   proc.stop(); stopStream(cam?.stream); cam = null;
@@ -671,18 +671,23 @@ async function runFile(fps) {
   if (fileStop || !fileMode) return;
   setStatus('file.ended', '');
   const n = fileShots;
-  const acts = [{ label: t('file.again'), value: 'again' }];
-  if (n) acts.push({ label: t('file.toShots'), value: 'shots' });
-  acts.push({ label: t('file.toCam'), value: 'cam', primary: true });
-  const body = h('div', null, h('p', null, n ? t('file.found', { n }) : t('file.none')),
-    n ? null : h('ul.tips', null, h('li', null, t('file.tip1')), h('li', null, t('file.tip2')), h('li', null, t('file.tip3'))));
+  // Wurf erkannt: Video schließen und direkt die Auswertung zeigen (ein Wurf: der Wurf, mehrere: die Session)
+  if (n) {
+    const list = fileShotList.slice();
+    toast(t('file.found', { n }), 'ok');
+    await closeFile(false);
+    if (n === 1) openShot(list[0]); else openSession(list[0].sessionId);
+    return;
+  }
+  const acts = [{ label: t('file.again'), value: 'again' }, { label: t('file.toCam'), value: 'cam', primary: true }];
+  const body = h('div', null, h('p', null, t('file.none')),
+    h('ul.tips', null, h('li', null, t('file.tip1')), h('li', null, t('file.tip2')), h('li', null, t('file.tip3'))));
   const v = await sheet(t('file.result'), body, acts);
   if (v === 'again') { corners = []; calibrated = false; pendingFps = fps; video.currentTime = 0.001; await new Promise(r => { video.onseeked = r; }); await startCalib(); }
-  else if (v === 'shots') { closeFile(); document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'history' })); }
   else if (v === 'cam') closeFile();
 }
 // Video schließen: zurück zur Kamera mit deren Einrichtung
-async function closeFile() {
+async function closeFile(restartCam = true) {
   if (!fileMode) return;
   fileStop = true; pendingFps = 0;
   endMode(); unfreeze();
@@ -693,7 +698,7 @@ async function closeFile() {
   if (paused) togglePause();
   const q = new URLSearchParams(location.search);
   if (q.get('video')) history.replaceState(null, '', location.pathname + location.hash);
-  if (active) await startCam();
+  if (active && restartCam) await startCam();
 }
 
 // ---------- Overlay ----------

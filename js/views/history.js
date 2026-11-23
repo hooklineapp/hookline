@@ -15,6 +15,10 @@ export async function showHistory() { if (!stack.length) stack = [{ v: 'sessions
 
 function go(v) { stack.push(v); render(); }
 function back() { stack.pop(); if (!stack.length) stack = [{ v: 'sessions' }]; render(); }
+export function openSession(sid) {
+  stack = [{ v: 'sessions' }, { v: 'session', id: sid }];
+  document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'history' }));
+}
 export async function openShot(shot) {
   stack = [{ v: 'sessions' }, { v: 'session', id: shot.sessionId }, { v: 'shot', id: shot.id, sid: shot.sessionId }];
   document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'history' }));
