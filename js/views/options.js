@@ -12,8 +12,13 @@ export function initOptions(el) { root = el; }
 export async function showOptions() {
   root.innerHTML = '';
   root.append(h('h2', null, t('o.title')));
+  const ex = !!S.get('expertMode');
+  root.append(h('div.mode-switch', null, h('small', null, t('o.expertHint')),
+    h('div.seg', null,
+      h('button' + (!ex ? '.on' : ''), { onclick: () => { S.set('expertMode', false); showOptions(); } }, t('o.normal')),
+      h('button' + (ex ? '.on' : ''), { onclick: () => { S.set('expertMode', true); showOptions(); } }, t('o.expert')))));
   root.append(await bowlersCard());
-  for (const g of S.GROUPS) root.append(await groupEl(g));
+  for (const g of S.GROUPS) { const el = await groupEl(g, ex); if (el) root.append(el); }
   root.append(await dataCard());
   root.append(aboutCard());
 }
@@ -48,11 +53,13 @@ async function editBowler(b, isNew) {
   showOptions();
 }
 
-async function groupEl(g) {
-  const d = h('details.grp', null, h('summary', null, t('g.' + g)));
+async function groupEl(g, expert) {
+  const items = S.SCHEMA.filter(x => x.group === g && !x.hidden && (expert || x.basic));
+  if (!items.length) return null;
+  const d = h('details.grp', { open: g === 'general' && !expert }, h('summary', null, t('g.' + g)));
   let cams = [];
   if (g === 'camera') { try { cams = await listCameras(); } catch { /* */ } }
-  for (const s of S.SCHEMA.filter(x => x.group === g)) d.append(control(s, cams));
+  for (const s of items) d.append(control(s, cams));
   if (g === 'camera' && window.__camInfo) {
     const i = window.__camInfo;
     d.append(h('div.opt', null, h('small.muted', null, t('o.camInfo', { info: t('cam.info', { w: i.w, h: i.h, fps: i.fps, label: i.label }) }))));

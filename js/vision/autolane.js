@@ -125,7 +125,9 @@ export function autoLane(frame, opt = {}) {
     if (G.wd < maxW * 0.55) continue; // Rinnen/Abdeckungen sind deutlich schmaler
     const mid = (G.a.x + G.b.x) / 2;
     const contains = target >= G.a.x && target <= G.b.x;
-    const sc = (contains ? 2 : 0) - Math.abs(mid - target) / w + G.wd / maxW + (G.a.v + G.b.v) / (2 * mx);
+    // mit Wunschpunkt: dessen Bahn; ohne: die nächstgelegene (breiteste) Bahn nahe der Bildmitte
+    const sc = opt.target ? (contains ? 2 : 0) - Math.abs(mid - target) / w + G.wd / maxW + (G.a.v + G.b.v) / (2 * mx)
+      : (contains ? 0.4 : 0) - 0.6 * Math.abs(mid - target) / w + 1.6 * G.wd / maxW + (G.a.v + G.b.v) / (2 * mx);
     if (!best || sc > best.sc) best = { ...G, sc };
   }
   if (!best) return { error: 'lane' };

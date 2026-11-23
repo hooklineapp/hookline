@@ -7,9 +7,22 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.2.0';
+window.BT_VERSION = '1.3.0';
 S.loadSettings();
 setLang(S.get('lang'));
+// Design: Glas/Flat und Hell/Dunkel/Automatisch
+const mqDark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+function applyTheme() {
+  const th = S.get('theme');
+  const dark = th === 'dark' || (th === 'auto' && mqDark?.matches);
+  const root = document.documentElement;
+  root.dataset.theme = dark ? 'dark' : 'light';
+  root.dataset.style = S.get('uiStyle') || 'glass';
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0b0e15' : '#f3f4f8');
+}
+applyTheme();
+mqDark?.addEventListener?.('change', applyTheme);
+S.onChange((k) => { if (k === 'theme' || k === 'uiStyle' || k === '*') applyTheme(); });
 document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
 
 const views = { live: [showLive, hideLive], history: [showHistory], stats: [showStats], options: [showOptions] };
