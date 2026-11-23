@@ -24,6 +24,7 @@ export const ENGINE_DEFAULTS = {
   // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
   // Nachbarschaftsvergleich (nbPx) und weiche Kugelfarbe im Lauf sind aus, weil sie saubere Aufnahmen verschlechtern
   gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
+  colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
   cooldown: 3.0, debug: false,
 };
 
@@ -147,9 +148,22 @@ export class Engine {
     return { x: (x0 + 0.5) / w, y: (y0 + 0.5) / h, w: (x1 - x0) / w, h: (y1 - y0) / h };
   }
 
+  // Kugelfarbe aus einer angetippten Stelle. Kugeln sind oft gemustert (Wirbel, Verläufe): deshalb bis zu 3
+  // Farbgruppen (k-Means in YCbCr, Helligkeit schwächer gewichtet), jede mit eigener Streuung. Ist die Bahn schon
+  // eingerichtet, deckt die Probe die ganze Kugel ab (Bildradius aus der Kamera), sonst einen festen Radius.
   sampleColor(frame, nx, ny, nr) {
     const { width: w, height: h, data } = frame;
-    const cx = nx * w - 0.5, cy = ny * h - 0.5, r = Math.max(2, nr * w);
+    const cx = nx * w - 0.5, cy = ny * h - 0.5;
+    let r = Math.max(2, nr * w);
+    const cam = this.cam || (this.ref && this.ref.w === w ? cameraFromH(this.ref.Href, w, h, this.f) : null);
+    if (this.o.colorSampleBall && cam && this.ref && this.ref.w === w) {
+      try {
+        const HR = inv(cam.planeH(BALL_R));
+        const [X, Y] = apply(HR, cx, cy);
+        const z = cam.P(X, Y, BALL_R)[2];
+        if (isFinite(z) && z > 0) r = Math.min(0.08 * w, Math.max(3, 0.7 * BALL_R * cam.f / z));
+      } catch { /* fester Radius */ }
+    }
     const s = [];
     for (let y = Math.max(0, cy - r | 0); y < Math.min(h, cy + r); y++)
       for (let x = Math.max(0, cx - r | 0); x < Math.min(w, cx + r); x++) {
@@ -158,12 +172,53 @@ export class Engine {
       }
     if (s.length < 4) return null;
     const yc = s.map(p => ycc(...p)).sort((a, b) => a[0] - b[0]);
-    const tr = yc.slice(Math.floor(yc.length * 0.1), Math.ceil(yc.length * 0.9));
-    const m = [0, 0, 0]; tr.forEach(v => { m[0] += v[0]; m[1] += v[1]; m[2] += v[2]; });
-    m[0] /= tr.length; m[1] /= tr.length; m[2] /= tr.length;
-    let sy = 0, sc = 0; tr.forEach(v => { sy += (v[0] - m[0]) ** 2; sc += (v[1] - m[1]) ** 2 + (v[2] - m[2]) ** 2; });
+    // Glanzlichter und tiefe Schatten weglassen
+    const tr = yc.slice(Math.floor(yc.length * 0.05), Math.ceil(yc.length * 0.95));
+    const stats = (arr) => {
+      const m = [0, 0, 0]; arr.forEach(v => { m[0] += v[0]; m[1] += v[1]; m[2] += v[2]; });
+      m[0] /= arr.length; m[1] /= arr.length; m[2] /= arr.length;
+      let sy = 0, sc = 0; arr.forEach(v => { sy += (v[0] - m[0]) ** 2; sc += (v[1] - m[1]) ** 2 + (v[2] - m[2]) ** 2; });
+      return { y: m[0], cb: m[1], cr: m[2], sy: Math.sqrt(sy / arr.length), sc: Math.sqrt(sc / arr.length) };
+    };
+    // k-Means mit k = 3, Start: am weitesten auseinanderliegende Punkte
+    const dist = (a, b) => 0.25 * (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    let cen = [tr[tr.length >> 1]];
+    while (cen.length < 3 && tr.length >= 12) {
+      let far = null, fd = -1;
+      for (const v of tr) { const d = Math.min(...cen.map(c => dist(v, c))); if (d > fd) { fd = d; far = v; } }
+      if (fd < 60) break;                  // keine weiteren deutlich anderen Farben
+      cen.push(far);
+    }
+    let lab = new Array(tr.length).fill(0);
+    for (let it = 0; it < 8; it++) {
+      lab = tr.map(v => { let bi = 0, bd = Infinity; cen.forEach((c, k) => { const d = dist(v, c); if (d < bd) { bd = d; bi = k; } }); return bi; });
+      cen = cen.map((c, k) => { const g = tr.filter((_, i) => lab[i] === k); if (!g.length) return c; const st = stats(g); return [st.y, st.cb, st.cr]; });
+    }
+    let clusters = cen.map((_, k) => { const g = tr.filter((_, i) => lab[i] === k); return g.length ? { ...stats(g), share: g.length / tr.length } : null; })
+      .filter(c => c && c.share >= 0.15).sort((a, b) => b.share - a.share);
+    // Gruppen, die wie die Bahn selbst aussehen (Probe teils neben der Kugel), verwerfen
+    const lane = this._laneColor();
+    if (lane && clusters.length > 1) {
+      const rest = clusters.filter(c => !(Math.hypot(c.cb - lane.cb, c.cr - lane.cr) < 10 && Math.abs(c.y - lane.y) < 30));
+      if (rest.length) clusters = rest;
+    }
+    const all = stats(tr);
+    const main = clusters[0] || all;
     const rgb = [0, 0, 0]; s.forEach(p => { rgb[0] += p[0]; rgb[1] += p[1]; rgb[2] += p[2]; });
-    return { y: m[0], cb: m[1], cr: m[2], sy: Math.sqrt(sy / tr.length), sc: Math.sqrt(sc / tr.length), rgb: rgb.map(v => Math.round(v / s.length)) };
+    return { y: main.y, cb: main.cb, cr: main.cr, sy: main.sy, sc: main.sc, clusters, rgb: rgb.map(v => Math.round(v / s.length)) };
+  }
+  // typische Farbe der Bahn (Median des Hintergrundmodells auf der Bahnfläche)
+  _laneColor() {
+    const g = this.grid; if (!g || g.frames < 8) return null;
+    const ys = [], cbs = [], crs = [];
+    for (let j = 0; j < g.ny; j += 7) for (let i = 0; i < g.nx; i += 3) {
+      const X = g.X0 + (i + 0.5) * g.cx; if (X < 0.05 || X > LANE_W - 0.05) continue;
+      const k = j * g.nx + i; if (!g.valid[k]) continue;
+      const c = ycc(g.bg[k * 3], g.bg[k * 3 + 1], g.bg[k * 3 + 2]); ys.push(c[0]); cbs.push(c[1]); crs.push(c[2]);
+    }
+    if (ys.length < 20) return null;
+    const med = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+    return { y: med(ys), cb: med(cbs), cr: med(crs) };
   }
 
   _ensureGrid() {
@@ -217,7 +272,11 @@ export class Engine {
     const a = learning ? 0.35 : o.bgRate;
     const bc = this.ballColor;
     const useColor = !!bc && o.detMode !== 'motion';
-    const cTol = bc ? o.colorTol * Math.max(7, 2.5 * bc.sc) : 0, lTol = bc ? o.lumTol * Math.max(28, 2.5 * bc.sy) : 0;
+    // eine oder mehrere Farbgruppen (gemusterte Kugeln); alte gespeicherte Farben haben nur eine
+    const cls = bc ? (o.colorClusters && bc.clusters && bc.clusters.length ? bc.clusters : [bc]) : [];
+    // Mindesttoleranz: einzelne Farbgruppen sind sehr einheitlich; ferne, unscharfe Kugeln weichen stärker ab
+    const multi = cls.length > 1, cMin = multi ? o.clusterTolC : 7, lMin = multi ? o.clusterTolY : 28;
+    const cTols = cls.map(c => o.colorTol * Math.max(cMin, 2.5 * c.sc)), lTols = cls.map(c => o.lumTol * Math.max(lMin, 2.5 * c.sy));
     let active = 0;
     // Belichtung und Weißabgleich ausgleichen: Verhältnis aktuelles Bild / Hintergrund je Farbkanal (Median über
     // eingelernte Zellen). Handys regeln Helligkeit und Farbe ständig nach; ohne Ausgleich wird die ganze Bahn "Bewegung".
@@ -248,7 +307,9 @@ export class Engine {
       const r = cur[k * 3] * ig0, gg = cur[k * 3 + 1] * ig1, b = cur[k * 3 + 2] * ig2;
       if (useColor) {
         const Y = 0.299 * r + 0.587 * gg + 0.114 * b, Cb = -0.1687 * r - 0.3313 * gg + 0.5 * b, Cr = 0.5 * r - 0.4187 * gg - 0.0813 * b;
-        col[k] = Math.hypot(Cb - bc.cb, Cr - bc.cr) < cTol && Math.abs(Y - bc.y) < lTol ? 1 : 0;
+        let m = 0;
+        for (let q = 0; q < cls.length; q++) if (Math.hypot(Cb - cls[q].cb, Cr - cls[q].cr) < cTols[q] && Math.abs(Y - cls[q].y) < lTols[q]) { m = 1; break; }
+        col[k] = m;
       } else col[k] = 0;
       if (age[k] === 0) { // neu sichtbar
         bg[k * 3] = r; bg[k * 3 + 1] = gg; bg[k * 3 + 2] = b; dev[k] = o.motionThr * 0.3; age[k] = 1; fg[k] = 0; continue;

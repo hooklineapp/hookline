@@ -38,6 +38,13 @@ export async function showOptions(keepLook) {
   if (keepY) root.scrollTop = keepY;
 }
 
+// Kugelfarbe als Farbfelder: bei gemusterten Kugeln bis zu 3 erkannte Farbgruppen
+function ballSwatches(bc) {
+  const toRgb = (c) => { const r = c.y + 1.402 * c.cr, g = c.y - 0.344136 * c.cb - 0.714136 * c.cr, b = c.y + 1.772 * c.cb;
+    return `rgb(${[r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v)))).join(',')})`; };
+  const list = bc.clusters && bc.clusters.length ? bc.clusters.map(toRgb) : [`rgb(${bc.rgb})`];
+  return h('span.swatches', { title: t('o.ballColor') }, list.map(c => h('span.swatch', { style: { background: c } })));
+}
 async function bowlersCard() {
   const d = keepOpen(h('details.grp', null, h('summary', null, t('o.bowlers'))), 'bowlers', true);
   for (const b of state.bowlers) {
@@ -45,7 +52,7 @@ async function bowlersCard() {
     d.append(h('div.opt', null,
       h('label', null, h('input', { type: 'radio', name: 'bowler', checked: b.id === state.bowler?.id, onchange: async () => { await setBowler(b.id); const { syncBall, syncPins } = await import('./live.js'); syncBall(); syncPins(); showOptions(); } }),
         ' ', h('b', null, b.name), ' · ', b.hand === 'L' ? t('o.handL') : t('o.handR'), ' ',
-        c ? h('span.swatch', { style: { background: `rgb(${c})` } }) : h('small.muted', null, t('o.ballColor') + ': ' + t('o.noColor'))),
+        c ? ballSwatches(b.ballColor) : h('small.muted', null, t('o.ballColor') + ': ' + t('o.noColor'))),
       h('button', { onclick: () => editBowler(b) }, t('btn.edit'))));
   }
   d.append(h('div.opt', null, h('span'), h('div.row', null,

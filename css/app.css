@@ -580,3 +580,4 @@ button.step { background: none !important; border: 0 !important; box-shadow: non
 .step.sel { color: var(--ink); font-weight: 700; }
 .step.sel b { background: var(--acc) !important; color: #fff !important; box-shadow: 0 0 0 4px var(--acc-soft); }
 .handle.sel { border-color: #facc15; box-shadow: 0 0 0 3px rgba(250, 204, 21, .55), 0 2px 8px rgba(0, 0, 0, .35); }
+.swatches { display: inline-flex; gap: 3px; vertical-align: middle; }
