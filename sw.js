@@ -1,5 +1,5 @@
 // Offline: App-Hülle vorab cachen, danach "stale-while-revalidate".
-const V = 'hl-v1.1.1';
+const V = 'hl-v1.1.2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons/icon.svg', 'icons/icon-192.png',
   'js/main.js', 'js/settings.js', 'js/i18n.js', 'js/db.js', 'js/store.js', 'js/ui.js', 'js/camera.js', 'js/processor.js',
   'js/analysis.js', 'js/scoring.js', 'js/lane.js', 'js/replay.js',
@@ -15,7 +15,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.includes('/test/')) return;
   e.respondWith(caches.open(V).then(async (c) => {
     const hit = await c.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
+    // beim Server nachfragen (umgeht den 10-Minuten-Cache von GitHub Pages); offline greift der Speicher
+    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
     return hit || net;
   }));
 });
