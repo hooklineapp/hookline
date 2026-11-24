@@ -35,7 +35,16 @@ h3 { font-size: 18px; }
 p { margin: 0; max-width: 68ch; }
 .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
 
-/* Kopf mit Standbild */
+/* schlichter Kopf */
+.top { border-bottom: 1px solid var(--line); }
+.top .wrap { padding-block: max(14px, env(safe-area-inset-top, 0px)) 24px; display: grid; gap: 12px; }
+.top nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.top .brand { color: var(--fg); }
+.top .btn { color: var(--acc); border: 1.5px solid var(--line); min-height: 40px; padding: 8px 16px; }
+.top h1 { font-size: clamp(22px, 4.5vw, 30px); letter-spacing: -0.01em; margin-top: 8px; }
+.top .lead { color: var(--mute); max-width: 68ch; }
+.top .toc a { color: var(--fg); background: var(--card); border-color: var(--line); }
+/* Kopf mit Standbild (nicht mehr verwendet) */
 .hero { position: relative; color: var(--hero-fg); overflow: hidden; background: #11131a; }
 .hero::before { content: ""; position: absolute; inset: 0; background: url(info/img/kopf-bahn.jpg) center 55% / cover no-repeat; opacity: .6; }
 .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10, 12, 20, .35) 0%, rgba(10, 12, 20, .85) 100%); }
@@ -123,15 +132,13 @@ table.params td { font-variant-numeric: tabular-nums; }
 </head>
 <body>
 
-<header class="hero">
-  <div class="stripes" aria-hidden="true"></div>
+<header class="top">
   <div class="wrap">
     <nav>
       <a class="brand" href="./"><img src="icons/icon-192.png" alt="">Hookline</a>
-      <a class="btn light" href="https://github.com/hooklineapp/hookline">Quellcode</a>
+      <a class="btn" href="https://github.com/hooklineapp/hookline">Quellcode</a>
     </nav>
-    <p class="eyebrow" style="color:#c7d2fe">Technik</p>
-    <h1>Bowling-Tracking mit einer Handykamera</h1>
+    <h1>Technik: Bowling-Tracking mit einer Handykamera</h1>
     <p class="lead">Eigene Bildverarbeitung in reinem JavaScript, ohne Bibliotheken, ohne Server, ohne Build-Schritt. Rund 6.000 Zeilen für Bahnerkennung mit einem kleinen neuronalen Netz, Nachführung, Homografie, Kugelsuche, Pin-Erkennung, Bahnanalyse und 3D-Pinphysik. Hier steht, wie es funktioniert, mit den echten Parametern.</p>
     <div class="toc">
       <a href="#arch">Architektur</a><a href="#kalib">Kalibrierung</a><a href="#netz">Bahn finden</a><a href="#track">Nachführung</a><a href="#raster">Entzerrung</a><a href="#kugel">Kugel</a><a href="#automat">Zustände</a><a href="#analyse">Analyse</a><a href="#pins">Pins</a><a href="#sim">Simulation</a><a href="#grenzen">Grenzen</a>
