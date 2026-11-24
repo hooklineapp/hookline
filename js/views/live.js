@@ -614,6 +614,13 @@ async function handleEvent(ev) {
   if (ev.type === 'start') { if (performance.now() > quietUntil && last?.ok !== false && mode === 'live') { buzz(20); beep(660); } }
   else if (ev.type === 'abort') { toast(t('shot.abort')); }
   else if (ev.type === 'shot') {
+    if (fileMode && S.get('fileOneShot')) fileEarly = true;   // Video: nach dem ersten Wurf samt Pins aufhören
+    let done; savingShot = new Promise(r => { done = r; });
+    try { await saveShotEvent(ev); } finally { done(); }
+  }
+}
+async function saveShotEvent(ev) {
+  {
     if (performance.now() > quietUntil) { buzz(60); beep(990, 0.12); }
     if (!S.get('autoSave') && !confirm(t('btn.save') + '?')) return;
     const shot = await addShot(ev.shot, { source: fileMode ? 'file' : 'camera' });
@@ -716,7 +723,7 @@ function pickFile() {
   inp.onchange = () => { const f = inp.files[0]; if (f) openVideoUrl(URL.createObjectURL(f), new URLSearchParams()); };
   inp.click();
 }
-let camCorners = null, fileShots = 0, fileShotList = [];
+let camCorners = null, fileShots = 0, fileShotList = [], fileEarly = false, savingShot = null;
 async function openVideoUrl(url, q) {
   if (!fileMode) camCorners = corners.length === 4 ? corners.map(c => [...c]) : null;
   fileMode = true; fileStop = true; fileShots = 0; fileShotList = [];
@@ -757,12 +764,13 @@ async function openVideoUrl(url, q) {
   await runFile(fps);
 }
 async function runFile(fps) {
-  fileStop = false;
+  fileStop = false; fileEarly = false;
   window.__fileDone = false;
   if (paused) togglePause();
   setStatus('file.running', 'ok');
-  await proc.runFile(video, fps, (i, n) => { progress.style.transform = `scaleX(${i / n})`; }, () => fileStop || !active);
+  await proc.runFile(video, fps, (i, n) => { progress.style.transform = `scaleX(${i / n})`; }, () => fileStop || fileEarly || !active);
   await new Promise(r => setTimeout(r, 700));   // letzter Wurf (Abschluss am Videoende) kommt etwas später
+  if (savingShot) await savingShot;             // Speichern/Pins-Bestätigung abwarten
   window.__fileDone = true;
   progress.style.transform = 'scaleX(0)';
   if (fileStop || !fileMode) return;

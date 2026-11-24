@@ -19,6 +19,7 @@ export const SCHEMA = [
   S('wakeLock', 'bool', true, { group: 'general' , basic: true }),
   S('autoSave', 'bool', true, { group: 'general' , basic: true }),
   S('confirmShots', 'bool', false, { group: 'general' , basic: true }),
+  S('fileOneShot', 'bool', true, { group: 'general', basic: true }),
   // Kamera
   S('camDevice', 'camera', '', { group: 'camera' , basic: true }),
   S('camRes', 'select', 'auto', { group: 'camera', options: ['auto', '480', '720', '1080', '1440', '2160'] , basic: true }),
