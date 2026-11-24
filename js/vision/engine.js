@@ -26,7 +26,7 @@ export const ENGINE_DEFAULTS = {
   gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
   colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,
   motionFallback: false, motionSeedSize: 0.8, motionSeedExtra: 4,   // Wurfstart über Bewegung, wenn die Kugelfarbe nicht passt   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
-  cooldown: 3.0, debug: false,
+  cooldown: 3.0, debug: false, ballHitCheck: true,
 };
 
 const pinR = [[0, 0.0285], [0.03, 0.04], [0.0635, 0.0475], [0.114, 0.0605], [0.165, 0.0575],
@@ -568,6 +568,7 @@ export class Engine {
   _finish(ts, ev) {
     let pins = null;
     if (this.o.pinsEnabled && this.pinMeas.length) pins = this._decidePins();
+    if (pins && this.o.ballHitCheck) this._ballHitCheck(pins);
     const shot = {
       tStart: this.tStart, tImpact: this.tImpact, points: this.track.map(p => [+p[0].toFixed(4), +p[1].toFixed(4), +p[2].toFixed(4)]),
       itrack: this.itrack.map(p => [+p[0].toFixed(4), +p[1].toFixed(5), +p[2].toFixed(5)]),
@@ -579,6 +580,24 @@ export class Engine {
     ev.push({ type: 'shot', t: ts, shot });
     this.state = 'cooldown'; this.tCoolEnd = ts + this.o.cooldown;
     this.track = []; this.seed = []; this.itrack = [];
+  }
+
+  // Gegencheck mit der Kugelspur: Der erste Pin, durch dessen Platz die Kugel rollt, kann nicht stehen bleiben
+  // (die Kugel wiegt 4,5-mal so viel). Steht er laut Bild trotzdem, war die Messung gestört (Verdeckung, Wackeln).
+  _ballHitCheck(pins) {
+    const pts = this.track.filter(p => p[2] > 9);
+    if (pts.length < 4) return;
+    // X über Y gerade anpassen (letzte Meter vor den Pins), auf die Pin-Reihen hochrechnen
+    const n = pts.length, my = pts.reduce((a, p) => a + p[2], 0) / n, mx = pts.reduce((a, p) => a + p[1], 0) / n;
+    let sxy = 0, syy = 0;
+    for (const p of pts) { sxy += (p[2] - my) * (p[1] - mx); syy += (p[2] - my) ** 2; }
+    const k = syy > 1e-6 ? sxy / syy : 0, xAt = (Y) => mx + k * (Y - my);
+    const reach = BALL_R + 0.0605 - 0.02;   // Kugel + dickste Pinstelle, mit etwas Sicherheitsabstand
+    const first = [...(this.pinsBefore || [])].map(id => ({ id, d: Math.abs(xAt(PINS[id][1]) - PINS[id][0]), y: PINS[id][1] }))
+      .filter(q => q.d < reach).sort((a, b) => a.y - b.y)[0];
+    if (!first || !pins.standing.includes(first.id)) return;
+    pins.standing = pins.standing.filter(id => id !== first.id);
+    if (pins.detail?.[first.id]) pins.detail[first.id].forced = 'kugel';
   }
 
   _camSnapshot() {
