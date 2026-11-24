@@ -1,7 +1,7 @@
 // Bildzufuhr: holt so viele Kamerabilder wie möglich und gibt sie an die Auswertung (Worker oder Hauptthread).
 // Reihenfolge: MediaStreamTrackProcessor (jedes Kamerabild, exakte Zeit) -> Track im Worker -> requestVideoFrameCallback -> rAF.
 import { Engine } from './vision/engine.js';
-import { autoLane } from './vision/autolane.js';
+import { findCorners } from './vision/autocorners.js';
 import { snapCorners, snapNormalized } from './vision/snap.js';
 import { toGray } from './vision/lk.js';
 
@@ -9,8 +9,7 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
   constructor(onmsg) { this.e = new Engine(); this.onmessage = onmsg; this.c = document.createElement('canvas'); this.cx = this.c.getContext('2d', { willReadFrequently: true }); this.cc = document.createElement('canvas'); this.ccx = this.cc.getContext('2d', { willReadFrequently: true }); this.workW = 640; }
   postMessage(m) {
     setTimeout(() => {
-      const res = this._do(m);
-      if (res) this.onmessage({ data: res });
+      Promise.resolve(this._do(m)).then(res => { if (res) this.onmessage({ data: res }); });
     }, 0);
   }
   _do(m) {
@@ -32,11 +31,7 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
     if (m.calibrate) res = { type: 'calibrated', info: e.calibrate(frame, m.calibrate), w, h };
     else if (m.sample) res = { type: 'color', color: e.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
     else if (m.snap) res = { type: 'auto', ...snapNormalized(toGray(frame.data, w, h), w, h, m.snap.corners, m.snap.yTop || 18.288) };
-    else if (m.auto) {
-      const r = autoLane(frame, m.auto.target ? { target: [m.auto.target[0] * w - 0.5, m.auto.target[1] * h - 0.5] } : {});
-      if (!r.corners) res = { type: 'auto', error: r.error };
-      else { const sn = snapCorners(toGray(frame.data, w, h), w, h, r.corners, m.auto.yTop || 18.288); res = { type: 'auto', corners: (sn ? sn.corners : r.corners).map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]) }; }
-    }
+    else if (m.auto) res = findCorners(frame, m.auto);   // Promise (Modell wird beim ersten Mal geladen)
     else {
       const rect = e.cropRequest(m.t);
       let crop = null;
@@ -51,8 +46,8 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
       res = { type: 'result', ...e.process(frame, m.t, crop) };
     }
     src.close?.();
-    res.t = m.t; res.ms = performance.now() - t0; res.seq = m.seq;
-    return res;
+    const fin = (r) => { r.t = m.t; r.ms = performance.now() - t0; r.seq = m.seq; return r; };
+    return res instanceof Promise ? res.then(fin) : fin(res);
   }
   terminate() { }
 }

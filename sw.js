@@ -1,10 +1,10 @@
 // Offline-Speicher: die App läuft immer mit der Fassung, die bereits im Browser liegt ("cache first").
 // Eine neue Fassung wird erst übernommen, wenn der Nutzer in Optionen → Info "Aktualisieren" tippt.
-const V = 'hl-v1.14.4';
+const V = 'hl-v1.15.0';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons/icon.svg', 'icons/icon-small.svg', 'icons/icon-32.png', 'icons/icon-192.png',
   'js/main.js', 'js/settings.js', 'js/i18n.js', 'js/db.js', 'js/store.js', 'js/ui.js', 'js/camera.js', 'js/processor.js',
   'js/analysis.js', 'js/scoring.js', 'js/lane.js', 'js/replay.js', 'js/pinsim.js', 'js/mascot.js', 'js/autotune.js', 'js/update.js', 'js/colorpicker.js', 'js/pinphys.js', 'js/pinsim3d.js', 'js/sim3d-worker.js', 'js/pin3d-gl.js',
-  'js/vision/engine.js', 'js/vision/geometry.js', 'js/vision/lk.js', 'js/vision/worker.js', 'js/vision/snap.js', 'js/vision/autolane.js',
+  'js/vision/engine.js', 'js/vision/geometry.js', 'js/vision/lk.js', 'js/vision/worker.js', 'js/vision/snap.js', 'js/vision/autolane.js', 'js/vision/lanenet.js', 'js/vision/autocorners.js', 'js/vision/lanenet.bin',
   'js/views/live.js', 'js/views/history.js', 'js/views/stats.js', 'js/views/options.js', 'js/views/common.js'];
 
 self.addEventListener('install', (e) => {

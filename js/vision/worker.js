@@ -4,6 +4,7 @@ import { Engine } from './engine.js';
 import { autoLane } from './autolane.js';
 import { snapCorners, snapNormalized } from './snap.js';
 import { toGray } from './lk.js';
+import { findCorners } from './autocorners.js';
 
 const engine = new Engine();
 let canvas = null, ctx = null, cropCanvas = null, cctx = null;
@@ -36,16 +37,7 @@ function cropFrom(src, rect, max) {
   return { data: img.data, width: cw, height: ch, rect };
 }
 
-export function autoCorners(frame, a) {
-  const { width: w, height: h } = frame;
-  const r = autoLane(frame, a.target ? { target: [a.target[0] * w - 0.5, a.target[1] * h - 0.5] } : {});
-  if (!r.corners) return { error: r.error || 'fail' };
-  const sn = snapCorners(toGray(frame.data, w, h), w, h, r.corners, a.yTop || 18.288);
-  const c = (sn ? sn.corners : r.corners).map(([x, y]) => [(x + 0.5) / w, (y + 0.5) / h]);
-  return { corners: c };
-}
-
-function handle(m, src) {
+async function handle(m, src) {
   const t0 = performance.now();
   const frame = frameFrom(src);
   lastFrame = frame;
@@ -53,7 +45,7 @@ function handle(m, src) {
   if (m.calibrate) {
     res = { type: 'calibrated', info: engine.calibrate(frame, m.calibrate), w: frame.width, h: frame.height };
   } else if (m.auto) {
-    res = { type: 'auto', ...autoCorners(frame, m.auto) };
+    res = await findCorners(frame, m.auto);
   } else if (m.snap) {
     res = { type: 'auto', ...snapNormalized(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, m.snap.corners, m.snap.yTop || 18.288) };
   } else if (m.sample) {
@@ -79,7 +71,7 @@ async function readTrack(track) {
     camFrames++;
     if (busy || paused) { vf.close(); continue; }
     busy = true;
-    try { handle({ t: vf.timestamp / 1000, seq: ++seq }, vf); }
+    try { handle({ t: vf.timestamp / 1000, seq: ++seq }, vf).catch(e => self.postMessage({ type: 'error', message: String(e) })); }
     catch (err) { self.postMessage({ type: 'error', message: String(err?.message || err) }); }
     vf.close(); busy = false;
   }
@@ -91,7 +83,7 @@ self.onmessage = (e) => {
   const m = e.data;
   try {
     if (m.type === 'options') { if (m.workW) workW = m.workW; engine.setOptions(m.options); }
-    else if (m.type === 'frame') { const src = m.bitmap || m.vf; try { handle(m, src); } finally { src.close?.(); } }
+    else if (m.type === 'frame') { const src = m.bitmap || m.vf; try { handle(m, src).catch(e => self.postMessage({ type: 'error', message: String(e), seq: m.seq })); } finally { src.close?.(); } }
     else if (m.type === 'track') {
       if (!self.MediaStreamTrackProcessor) { self.postMessage({ type: 'trackFail' }); m.track.stop(); return; }
       readTrack(m.track).catch(err => self.postMessage({ type: 'trackFail', message: String(err) }));

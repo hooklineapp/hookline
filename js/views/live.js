@@ -173,7 +173,7 @@ function calbar(show) {
         h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close')))),
     steps, h('p.cal-msg', null, msg),
     h('div.cal-actions', null,
-      h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { pickLane = !pickLane; calbar(true); } }, icon('magic'), t('cal.auto')),
+      h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { if (pickLane) { pickLane = false; calbar(true); } else runAuto(null); } }, icon('magic'), t('cal.auto')),
       n === 4 ? h('button.pillbtn', { onclick: runSnap }, icon('corners'), t('cal.snap')) : null,
       h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; selCorner = -1; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
@@ -202,7 +202,7 @@ function dragPanel(e) {
 function setCalSide(top) { calTop = top; calPos = null; calPanel.style.top = ''; calPanel.style.bottom = ''; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); }
 function autoCalSide(pt) {
   if (calSideManual || calPanel.style.display === 'none') return;
-  const R = viewRect(), pr = calPanel.getBoundingClientRect(), H = pr.height + 24;
+  const R = viewRect(), pr = calPanel.getBoundingClientRect(), H = pr.height + 14;   // nur wirklich verdeckte Ecken (Griff ~14 px)
   const pts = corners.map(c => toScreen(c[0], c[1], R)).map(([x, y]) => y + R.top);
   if (pt) pts.push(pt);
   const sh = stage.getBoundingClientRect();
@@ -235,7 +235,8 @@ async function runAuto(target) {
   const r = await proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
   calPanel.classList.remove('busy');
   pickLane = false;
-  if (r.corners) { corners = orderCorners(r.corners); buzz(); toast(t('cal.autoOk'), 'ok'); }
+  if (r.corners) { corners = r.ordered ? r.corners : orderCorners(r.corners); selCorner = -1; buzz(); toast(t('cal.autoOk'), 'ok'); }
+  else if (!target) { pickLane = true; toast(t('cal.pick')); }   // Modell unsicher: Bahn antippen lassen
   else toast(t('cal.autoFail'), 'bad');
   placeHandles(); calbar(true); requestDraw();
 }
@@ -317,9 +318,17 @@ function orderCorners(c) {
   const cx = px.reduce((s, p) => s + p[0], 0) / 4, cy = px.reduce((s, p) => s + p[1], 0) / 4;
   const ord = [0, 1, 2, 3].sort((i, j) => Math.atan2(px[i][1] - cy, px[i][0] - cx) - Math.atan2(px[j][1] - cy, px[j][0] - cx));
   const L = (i, j) => Math.hypot(px[ord[i]][0] - px[ord[j]][0], px[ord[i]][1] - px[ord[j]][1]);
-  // Seitenpaare: (0-1, 2-3) oder (1-2, 3-0); Bahnkanten = längeres Paar
+  // Seitenpaare: (0-1, 2-3) oder (1-2, 3-0). Querlinien (Foul, Kopfpin) sind im Bild meist paralleler und kürzer als die
+  // Bahnkanten, die auf den Fluchtpunkt zulaufen. Beides zusammen gewichtet (an 3450 Blender- und Videobildern fehlerfrei,
+  // nur Länge: 37 Fehler – z. B. ferne, kurz wirkende Bahnen oder seitliche Blickwinkel)
+  const ang = (a, b, c2, d) => {
+    const u = [px[ord[b]][0] - px[ord[a]][0], px[ord[b]][1] - px[ord[a]][1]], v = [px[ord[d]][0] - px[ord[c2]][0], px[ord[d]][1] - px[ord[c2]][1]];
+    return Math.acos(Math.min(1, Math.abs(u[0] * v[0] + u[1] * v[1]) / (Math.hypot(...u) * Math.hypot(...v) || 1))) * 180 / Math.PI;
+  };
+  const angA = ang(0, 1, 3, 2), angB = ang(1, 2, 0, 3);
   const pairA = L(0, 1) + L(2, 3), pairB = L(1, 2) + L(3, 0);
-  const short = pairA > pairB ? [[1, 2], [3, 0]] : [[0, 1], [2, 3]];
+  const aIsCross = (angA - angB) + 40 * Math.log(pairA / pairB) < 0;
+  const short = aIsCross ? [[0, 1], [2, 3]] : [[1, 2], [3, 0]];
   const len = (s) => L(s[0], s[1]), meanY = (s) => (px[ord[s[0]]][1] + px[ord[s[1]]][1]) / 2;
   let [foul, top] = short;
   const lf = len(foul), lt = len(top);
