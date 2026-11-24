@@ -73,7 +73,9 @@ async function ensureProc() {
   syncBall(); syncPins();
   setInterval(updateHud, 500);
 }
-export function syncBall() { proc?.post({ type: 'ballColor', color: state.bowler?.ballColor || null }); }
+// Videos zeigen oft eine andere Kugel (fremde Aufnahmen): dort nur eine im Video angetippte Farbe verwenden
+let fileBallColor = null;
+export function syncBall() { proc?.post({ type: 'ballColor', color: (fileMode ? fileBallColor : state.bowler?.ballColor) || null }); }
 export function syncPins() { proc?.post({ type: 'pinsBefore', pins: currentPosition().pinsBefore }); }
 
 export async function showLive() {
@@ -542,9 +544,12 @@ async function sampleBall(nx, ny) {
   if (!src) return;
   const r = await proc.request(src, { sample: { x: nx, y: ny, r: 0.006 } });
   if (r.color) {
-    state.bowler.ballColor = r.color;
-    const { saveBowler } = await import('../store.js');
-    await saveBowler(state.bowler);
+    if (fileMode) fileBallColor = r.color;   // nur für dieses Video, die Kugel des Spielers bleibt
+    else {
+      state.bowler.ballColor = r.color;
+      const { saveBowler } = await import('../store.js');
+      await saveBowler(state.bowler);
+    }
     syncBall();
     toast(t('ball.ok'), 'ok'); buzz();
     if (mode !== 'wizard') endMode();
@@ -727,6 +732,7 @@ let camCorners = null, fileShots = 0, fileShotList = [], fileEarly = false, savi
 async function openVideoUrl(url, q) {
   if (!fileMode) camCorners = corners.length === 4 ? corners.map(c => [...c]) : null;
   fileMode = true; fileStop = true; fileShots = 0; fileShotList = [];
+  fileBallColor = null; syncBall();
   await new Promise(r => setTimeout(r, 50));
   fileStop = false; calibrated = false; unfreeze();
   proc.stop(); stopStream(cam?.stream); cam = null;
@@ -751,7 +757,7 @@ async function openVideoUrl(url, q) {
           const bmp = await createImageBitmap(video);
           await proc.request(await createImageBitmap(video), { calibrate: corners });
           const r = await proc.request(bmp, { sample: { x: f.ball.u / gt.width, y: f.ball.v / gt.height, r: 0.006 } });
-          if (r.color) { state.bowler.ballColor = r.color; syncBall(); }
+          if (r.color) { fileBallColor = r.color; syncBall(); }
           video.currentTime = 0; await new Promise(r => { video.onseeked = r; });
         }
       }
@@ -799,6 +805,7 @@ async function closeFile(restartCam = true) {
   video.pause(); video.onended = null; video.removeAttribute('src'); video.load(); video.autoplay = true;
   fileMode = false; calibrated = false;
   corners = camCorners || []; camCorners = null;
+  fileBallColor = null; syncBall();
   progress.style.transform = 'scaleX(0)';
   if (paused) togglePause();
   const q = new URLSearchParams(location.search);
