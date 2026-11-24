@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Hookline Technik</title>
-<meta name="description" content="Technische Beschreibung von Hookline: LK-Nachführung, Homografie, Hintergrundmodell, Kugelsuche, Zustandsautomat, Analyse, Pin-Messung und Pin-Physik mit Parametern.">
+<meta name="description" content="Technische Beschreibung von Hookline: Bahnerkennung mit eigenem neuronalem Netz, LK-Nachführung, Homografie, Hintergrundmodell, Kugelsuche, Zustandsautomat, Analyse, Pin-Messung und Pin-Physik mit Parametern.">
 <link rel="icon" href="icons/icon-small.svg" type="image/svg+xml">
 <meta name="theme-color" content="#11131a">
 <style>
@@ -132,9 +132,9 @@ table.params td { font-variant-numeric: tabular-nums; }
     </nav>
     <p class="eyebrow" style="color:#c7d2fe">Technik</p>
     <h1>Bowling-Tracking mit einer Handykamera</h1>
-    <p class="lead">Eigene Bildverarbeitung in reinem JavaScript, ohne Bibliotheken, ohne Server, ohne Build-Schritt. Rund 2.400 Zeilen für Nachführung, Homografie, Kugelsuche, Pin-Erkennung, Bahnanalyse und Pin-Physik. Hier steht, wie es funktioniert, mit den echten Parametern.</p>
+    <p class="lead">Eigene Bildverarbeitung in reinem JavaScript, ohne Bibliotheken, ohne Server, ohne Build-Schritt. Rund 6.000 Zeilen für Bahnerkennung mit einem kleinen neuronalen Netz, Nachführung, Homografie, Kugelsuche, Pin-Erkennung, Bahnanalyse und 3D-Pinphysik. Hier steht, wie es funktioniert, mit den echten Parametern.</p>
     <div class="toc">
-      <a href="#arch">Architektur</a><a href="#kalib">Kalibrierung</a><a href="#track">Nachführung</a><a href="#raster">Entzerrung</a><a href="#kugel">Kugel</a><a href="#automat">Zustände</a><a href="#analyse">Analyse</a><a href="#pins">Pins</a><a href="#sim">Simulation</a><a href="#grenzen">Grenzen</a>
+      <a href="#arch">Architektur</a><a href="#kalib">Kalibrierung</a><a href="#netz">Bahn finden</a><a href="#track">Nachführung</a><a href="#raster">Entzerrung</a><a href="#kugel">Kugel</a><a href="#automat">Zustände</a><a href="#analyse">Analyse</a><a href="#pins">Pins</a><a href="#sim">Simulation</a><a href="#grenzen">Grenzen</a>
     </div>
   </div>
 </header>
@@ -174,6 +174,7 @@ table.params td { font-variant-numeric: tabular-nums; }
   <ul class="facts-list">
     <li><b>Bildquelle:</b> In Chrome liest <code>MediaStreamTrackProcessor</code> eine Kopie der Kameraspur und überträgt jeden <code>VideoFrame</code> mit Zeitstempel an den Worker. In Safari geht die Spur selbst in den Worker. Sonst <code>requestVideoFrameCallback</code> mit <code>captureTime</code>.</li>
     <li><b>Videodateien</b> werden abgespielt statt Bild für Bild angesprungen. Die Wiedergabegeschwindigkeit startet bei 0,5 und regelt alle 700 ms nach: ×0,7 bei verworfenen Bildern, sonst ×1,1, im Bereich 0,07–1. Zeitstempel kommen aus <code>mediaTime</code>, Tempo und Zeiten bleiben dadurch exakt.</li>
+    <li><b>Kamerastart:</b> Kamera, Auflösung und Bildrate des letzten Starts werden gemerkt und beim nächsten Mal direkt mit <code>deviceId</code> geöffnet, statt alle Auflösungen durchzuprobieren. Das spart Zeit und vermeidet das Klicken von Fokus und Stabilisator beim Umschalten.</li>
     <li><b>Pins</b> werden nicht im verkleinerten Bild gemessen. Die Engine fordert gezielt einen Ausschnitt aus dem Originalbild an, siehe <a href="#pins">Pins</a>.</li>
   </ul>
   <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/processor.js">processor.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/worker.js">vision/worker.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/camera.js">camera.js</a></p>
@@ -210,17 +211,53 @@ table.params td { font-variant-numeric: tabular-nums; }
       <h3>Homografie</h3>
       <p>Normierte DLT nach Hartley: Punkte auf Schwerpunkt verschoben und auf mittleren Abstand √2 skaliert, h₃₃ = 1, Normalgleichungen per Gauß-Elimination mit Pivotsuche, danach entnormiert.</p>
       <h3>Einrasten der Ecken</h3>
-      <p>Entlang beider Bahnkanten werden 49 Profile senkrecht zur Kante abgetastet (Schritt 0,25 px, bilinear). Je Profil gewinnt der stärkste Sprung hell → dunkel mit Kontrast ≥ 12, verfeinert per Parabel. Dann folgt eine Geradenanpassung nach kleinsten senkrechten Abständen mit 4 Runden Ausreißer-Trimmung (Residuum &gt; max(0,6; 2,5·Median)). Die Foul-Linie wird als dunkelster Punkt in 19 Querprofilen gesucht. Die Ecken sind die Schnittpunkte der Geraden. Verschiebt sich eine Ecke um mehr als max(6 px; 2,5 % der Bildbreite), wird das Ergebnis verworfen.</p>
+      <p>Entlang beider Bahnkanten werden 49 Profile senkrecht zur Kante abgetastet (Schritt 0,25 px, bilinear). Je Profil gewinnt der stärkste Sprung hell → dunkel mit Kontrast ≥ 12, verfeinert per Parabel. Dann folgt eine Geradenanpassung nach kleinsten senkrechten Abständen mit 4 Runden Ausreißer-Trimmung (Residuum &gt; max(0,6; 2,5·Median)). Die Foul-Linie wird als dunkelster Punkt in 19 Querprofilen gesucht. Die Ecken sind die Schnittpunkte der Geraden.</p>
+      <p>Damit das Ergebnis nicht vom Startpunkt abhängt, läuft das Einrasten von 9 leicht versetzten Starts (±1,2 % der Bildgröße) mit je bis zu 3 Durchgängen, erst breit, dann eng. Jede Ecke ist der Median über alle Starts. Findet eine Kante zu wenige Profilpunkte, bleibt nur diese Kante beim gesetzten Wert, statt alles zu verwerfen. Eine Ecke, die weiter als max(10 px; 6 % der Bildbreite) springen würde, bleibt ebenfalls stehen.</p>
     </div>
     <div class="text">
       <h3>Kamera aus H</h3>
       <p>Hauptpunkt in der Bildmitte. Die Brennweite folgt aus den Bedingungen r₁·r₂ = 0 und |r₁| = |r₂| der ersten beiden Spalten von K⁻¹H. Gültig ist 0,3·w &lt; f &lt; 6·w, sonst gilt f = 0,8·max(w, h). Rotation per Gram-Schmidt, r₃ = r₁ × r₂, Vorzeichen so, dass die Kamera über der Ebene liegt. f wird einmal bei der Kalibrierung bestimmt und danach festgehalten.</p>
       <p>Daraus entsteht eine vollständige Projektion P(X, Y, Z), die für Z = 0 exakt H reproduziert. Mit ihr rechnet die Engine Kugelmitte (Z = 0,1085 m), Pin-Silhouetten und Kamerastandort.</p>
-      <h3>Automatische Bahnsuche</h3>
-      <p>Sobel, Hough-Transformation (180 θ-Bins, Stimmen nur ±6° um die Gradientenrichtung), Fluchtpunkt aus allen Linienpaaren, Kantenprofil entlang der Fluchtstrahlen. Die breiteste Lücke zwischen Kanten ist die Bahn, Rinnen sind schmaler. Die Foul-Linie ist dort, wo das Kantensignal abbricht, die Kopfpin-Linie die unterste Zeile mit &gt; 12 % hellen, ungesättigten Pixeln.</p>
+      <h3>Ecken-Reihenfolge</h3>
+      <p>Getippte Ecken werden automatisch sortiert. Foul- und Kopfpin-Linie liegen quer zur Blickrichtung und sind im Bild fast parallel, die Bahnkanten laufen auf den Fluchtpunkt zu. Entschieden wird über (Winkel A − Winkel B) + 40·ln(Länge A / Länge B) &lt; 0. Nur nach Länge zu sortieren lag bei fernen oder seitlich gefilmten Bahnen in 37 von 3.450 Testfällen falsch, so in keinem.</p>
     </div>
   </div>
-  <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/geometry.js">vision/geometry.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/snap.js">vision/snap.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/autolane.js">vision/autolane.js</a></p>
+  <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/geometry.js">vision/geometry.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/snap.js">vision/snap.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/views/live.js">views/live.js</a> (<code>orderCorners</code>)</p>
+</div></section>
+
+<section id="netz"><div class="wrap sec">
+  <div class="sec-head">
+    <p class="eyebrow">Bahn finden</p>
+    <h2>Ein kleines neuronales Netz, ganz ohne Bibliothek</h2>
+    <p>Auf „Auto“ sucht ein eigenes Netz die Zielbahn im Bild, ohne dass man tippen muss. Es ist 137 KB groß, läuft in reinem JavaScript im Worker und braucht rund 0,2 s pro Bild. Der Nutzer sieht davon nur die vier Punkte.</p>
+  </div>
+  <div class="cols">
+    <div class="text">
+      <h3>Aufbau</h3>
+      <p>Eingang ist das Bild, gestaucht auf 256×256. Ein schmales U-Netz aus tiefenweise trennbaren Faltungen (Stamm mit 16 Kanälen, Encoder 32 → 64 → 96 mit erweiterten Faltungen, Decoder mit Sprungverbindungen) liefert 64×64 Werte in 5 Kanälen: die Fläche der Zielbahn und je eine Wärmekarte für die vier Ecken. Jede Ecke ist das Maximum ihrer Karte, verfeinert als gewichteter Schwerpunkt im 5×5-Fenster. Insgesamt sind es rund 70.000 Gewichte.</p>
+      <p>Für den Browser werden Batch-Normierung und Eingangsnormierung in die Faltungen eingerechnet und die Gewichte als 16-Bit-Gleitkommazahlen gespeichert. Die JavaScript-Rechnung weicht von der Trainingsrechnung um weniger als 0,3 px ab.</p>
+      <h3>Training</h3>
+      <p>Trainiert wird lokal auf der Grafikkarte mit Bildern, deren Ecken exakt bekannt sind: 21.600 Ansichten aus zufällig erzeugten Blender-Hallen (Holz und Kunststoff, Schwarzlicht, Seilmaschinen, Säulen, Bildschirme, Spieler direkt vor der Kamera, ein Viertel bis die Hälfte schräg von hinten gefilmt) und rund 470 echte Handybilder. Bei den echten Bildern wurden die Ecken einmal von Hand geprüft und dann per Merkmalsverfolgung durchs Video geführt. Videoschnitte werden dabei erkannt. Beim Training kommen Belichtung, Unschärfe, Rauschen, JPEG-Artefakte und Texteinblendungen hinzu.</p>
+    </div>
+    <div class="text">
+      <h3>Gegenchecks</h3>
+      <p>Ein falsch gesetzter Bahnrahmen ist schlimmer als die Bitte, auf die Bahn zu tippen. Deshalb übernimmt die App das Ergebnis nur, wenn alles passt:</p>
+      <ul class="facts-list">
+        <li>Die vier Ecken bilden ein konvexes Viereck, die Foul-Linie liegt unten, die Bahn ist hinten schmaler als vorn.</li>
+        <li>Das Ecken-Viereck deckt sich mit der unabhängig erkannten Bahnfläche (Überlappung ≥ 0,35).</li>
+        <li>Alle vier Ecken sind sicher (≥ 0,6).</li>
+      </ul>
+      <p>Sonst bittet die App, auf die Bahn zu tippen. Liegt der Tipp in der Bahn, die das Netz gefunden hat, bestätigt das sein Ergebnis. Sonst sucht die klassische Kantensuche um den getippten Punkt (Sobel, Hough, Fluchtpunkt, breiteste Lücke zwischen Kanten). In jedem Fall rasten die Ecken danach an den Kanten ein.</p>
+      <table class="params">
+        <caption>Prüfung an Bildern, die nicht im Training waren</caption>
+        <tr><th>eigene Handyvideos, Startbild</th><td>10 von 11 automatisch richtig</td></tr>
+        <tr><th>Bilder ohne erkennbare Zielbahn</th><td>1 von 20 fälschlich angenommen</td></tr>
+        <tr><th>Tipp in die Bahn</th><td>19 von 19 übernommen</td></tr>
+        <tr><th>Tipp daneben</th><td>19 von 19 zurückgewiesen</td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/lanenet.js">vision/lanenet.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/autocorners.js">vision/autocorners.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/vision/autolane.js">vision/autolane.js</a></p>
 </div></section>
 
 <section id="track"><div class="wrap sec">
@@ -378,7 +415,7 @@ table.params td { font-variant-numeric: tabular-nums; }
   <div class="cols">
     <div class="text">
       <h3>Stehend oder gefallen</h3>
-      <p>Für jeden Pin wird seine Silhouette aus P projiziert (Radiusprofil eines Normpins, Höhe 45–96 %). Die Pins werden von vorn nach hinten bearbeitet. Pixel, die ein näherer, stehender Pin verdeckt, zählen nicht. Die Schwelle hell/dunkel kommt aus dem Referenzbild (Mitte zwischen 75. Perzentil der Pins und Median des Hintergrunds), sonst Otsu. Liegt der Weißanteil im Verhältnis zur Referenz bei ≥ 0,5, steht der Pin. Sind zu wenige Pixel sichtbar, gilt er als verdeckt.</p>
+      <p>Für jeden Pin wird seine Silhouette aus P projiziert (Radiusprofil eines Normpins, Höhe 45–96 %). Die Pins werden von vorn nach hinten bearbeitet. Pixel, die ein näherer, stehender Pin verdeckt, zählen nicht. Die Schwelle hell/dunkel kommt aus dem Referenzbild (Mitte zwischen 75. Perzentil der Pins und Median des Hintergrunds), sonst Otsu. Liegt der Weißanteil im Verhältnis zur Referenz bei ≥ 0,5, steht der Pin. Ist schon die Referenz schwach (Median &lt; 0,4, etwa weil das Messfeld beim Wackeln neben dem Pin lag), würde das Verhältnis Störungen hochrechnen. Dann zählt der absolute Weißanteil (≥ 0,4). Sind zu wenige Pixel sichtbar, gilt der Pin als verdeckt.</p>
     </div>
     <div class="text">
       <h3>Fallbeginn (optional)</h3>
@@ -399,8 +436,8 @@ table.params td { font-variant-numeric: tabular-nums; }
 <section id="sim"><div class="wrap sec">
   <div class="sec-head">
     <p class="eyebrow">Replay und Simulation</p>
-    <h2>2D-Physik, an Messungen angepasst</h2>
-    <p>Das Replay zeichnet den Wurf aus den Daten neu, ohne Video. Für die Pins rechnet eine Scheibenphysik von oben: Kugel 7 kg (R 0,1085 m), Pins 1,55 kg (R 0,06 m), Stoßzahl Kugel-Pin 0,65 und Pin-Pin 0,55. Impulsstöße mit Überlappungskorrektur, Zeitschritt 1,5 ms über 1,4 s. Ein Pin gilt ab 0,6 m/s als umgefallen. Die gemessen stehenden Pins sind fest.</p>
+    <h2>Pin-Physik in 2D und 3D, an Messungen angepasst</h2>
+    <p>Das Replay zeichnet den Wurf aus den Daten neu, ohne Video. Zuerst rechnet eine schnelle Scheibenphysik von oben: Kugel 7 kg (R 0,1085 m), Pins 1,55 kg (R 0,06 m), Stoßzahl Kugel-Pin 0,65 und Pin-Pin 0,55. Impulsstöße mit Überlappungskorrektur, Zeitschritt 1,5 ms über 1,4 s. Ein Pin gilt ab 0,6 m/s als umgefallen. Die gemessen stehenden Pins sind fest.</p>
   </div>
   <div class="cols">
     <div class="text">
@@ -417,11 +454,21 @@ table.params td { font-variant-numeric: tabular-nums; }
       </table>
     </div>
   </div>
+  <div class="cols">
+    <div class="text">
+      <h3>3D-Starrkörper</h3>
+      <p>Für die Darstellung rechnet eine eigene 3D-Physik weiter, in einem eigenen Worker, damit die Oberfläche flüssig bleibt. Jeder Pin ist ein Starrkörper aus 8 Kollisionskugeln entlang des Normprofils plus einem Standfuß-Ring, mit Trägheitstensor aus dem Profil und Schwerpunkt bei 13,5 cm wie bei echten, innen hohlen Pins. Kugel 7 kg, Pins 1,55 kg. Stöße werden mit sequentiellen Impulsen und Coulomb-Reibung gelöst, mit 8 Iterationen bei einem Zeitschritt von 1/600 s über 1,6 s. Dazu kommen Bahn, Pindeck, flache Rinnen, Seitenbleche, Grube und Rückwand. Pins kippen, kreiseln, prallen von den Seiten zurück und werfen andere um.</p>
+    </div>
+    <div class="text">
+      <h3>Messung bleibt maßgeblich</h3>
+      <p>Die Kugel startet rollend mit gemessenem Tempo und gemessener Richtung. Pins, die laut Messung stehen geblieben sind, bleiben stehen. Fällt ein Pin in der Messung, in der Simulation aber nicht, bekommt er zur gemessenen Fallzeit einen Stoß in die gemessene Richtung. Gezeichnet wird mit einem kleinen WebGL-Zeichner exakt in der Perspektive der Aufnahme, aus der Homografie der Bahn plus Höhe. Abschaltbar ist das unter Optionen → „Pins in 3D“.</p>
+    </div>
+  </div>
   <figure>
     <img class="mock wide" src="info/img/mockup-replay.webp" alt="Drei Smartphones: Replay in der Draufsicht, Live-Ansicht beim Einschlag, Live-Ansicht beim Abwurf" loading="lazy" width="1800" height="1265">
     <figcaption>Links das Replay in der Draufsicht mit Laufweg und Breakpoint (grün), in der Mitte und rechts die Live-Ansicht beim Einschlag und kurz nach dem Abwurf.</figcaption>
   </figure>
-  <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/pinsim.js">pinsim.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/replay.js">replay.js</a></p>
+  <p class="src">Code: <a href="https://github.com/hooklineapp/hookline/blob/main/js/pinsim.js">pinsim.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/pinphys.js">pinphys.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/pinsim3d.js">pinsim3d.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/pin3d-gl.js">pin3d-gl.js</a> · <a href="https://github.com/hooklineapp/hookline/blob/main/js/replay.js">replay.js</a></p>
 </div></section>
 
 <section id="grenzen"><div class="wrap sec">
@@ -440,6 +487,7 @@ table.params td { font-variant-numeric: tabular-nums; }
     <li><b>Starkes Wackeln mit Bewegungsunschärfe:</b> In einer Testansicht zwischen den Bahnen (Ruckler, Bewegungsunschärfe, gutes Handy) lag das Tempo 8 % zu niedrig und der Einlaufwinkel 5,7° daneben. Mit simuliertem schlechtem Handy (360p, 30 Bilder/s, starkes Rauschen und Kompression) wurde dort kein Wurf erkannt.</li>
     <li><b>Verdeckung:</b> Steht die Kamera genau hinter dem Spieler, ist die Kugel auf den ersten Metern verdeckt. Der Start wird nur zwischen 0,4 und 8 m gesucht.</li>
     <li><b>Ferne Pins:</b> Bei weiter Sicht sind Pins nur wenige Pixel hoch. Fallzeiten werden dann nicht gemessen, und die Simulation ergänzt sie.</li>
+    <li><b>Automatische Bahnsuche:</b> An eigenen Videos findet das Netz die Bahn meist sofort. Bei fremden, sehr unterschiedlichen Handyvideos (andere Hallen, starke Texteinblendungen, Kamera weit weg oder tief) übernimmt es nur etwa 40 % ohne Tippen. Bei den übrigen fragt die App lieber nach, als zu raten.</li>
     <li><b>Foul-Linie nicht im Bild:</b> Die Kalibrierung braucht beide Enden der Bahn. Andere Bezugslinien wie Punkte oder Pfeile sind noch nicht vorgesehen.</li>
   </ul>
 </div></section>
