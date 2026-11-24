@@ -3,7 +3,7 @@
 const IN = 256, OUT = 64;
 const MEAN = [0.45, 0.42, 0.40];   // Rand der ersten Faltung wird mit dem Mittelwert aufgefüllt (wie im Training nach Normierung 0)
 
-let W = null, loading = null;
+let W = null, CH = [16, 32, 64, 96, 64, 48], loading = null;   // Kanalzahlen: Stamm, e1, e2, e3, u2, u1
 
 function half(u) {   // float16 -> float32
   const s = (u & 0x8000) ? -1 : 1, e = (u >> 10) & 0x1f, f = u & 0x3ff;
@@ -17,8 +17,11 @@ export function loadLaneNet(url) {
   if (!loading) loading = (async () => {
     const buf = await (await fetch(url)).arrayBuffer();
     const dv = new DataView(buf);
-    if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== 'LNT1') throw new Error('lanenet: Format');
-    const n = dv.getUint32(4, true), h = new Uint16Array(buf, 8, n), f = new Float32Array(n);
+    const tag = String.fromCharCode(...new Uint8Array(buf, 0, 4));
+    if (tag !== 'LNT1' && tag !== 'LNT2') throw new Error('lanenet: Format');
+    let off = 8;
+    if (tag === 'LNT2') { CH = [0, 1, 2, 3, 4, 5].map(i => dv.getUint16(8 + 2 * i, true)); off = 20; }   // breiteres Netz
+    const n = dv.getUint32(4, true), h = new Uint16Array(buf, off, n), f = new Float32Array(n);
     for (let i = 0; i < n; i++) f[i] = half(h[i]);
     W = f; return W;
   })().catch(e => { loading = null; throw e; });
@@ -91,20 +94,21 @@ function forward(x) {
   let o = 0;
   const take = (len) => { const at = o; o += len; return at; };
   const L = (ci, co) => ({ w: take(co * ci), b: take(co) });
-  const stemW = take(16 * 3 * 9), stemB = take(16);
-  let t = conv3(x, W, stemW, W, stemB, 16, 2, MEAN);
+  const [c0, c1, c2, c3, cu2, cu1] = CH;
+  const stemW = take(c0 * 3 * 9), stemB = take(c0);
+  let t = conv3(x, W, stemW, W, stemB, c0, 2, MEAN);
   const DS = (t, co, s = 1, d = 1) => {
     const dwW = take(t.c * 9), dwB = take(t.c);
     t = dw3(t, W, dwW, W, dwB, s, d);
     const p = L(t.c, co);
     return pw(t, W, p.w, W, p.b, co);
   };
-  t = DS(t, 32, 2); const a = DS(t, 32);
-  t = DS(a, 64, 2); const b = DS(t, 64);
-  t = DS(b, 96, 2); t = DS(t, 96); t = DS(t, 96, 1, 2); const c = DS(t, 96, 1, 4);
-  let u = up2cat(c, b); let p = L(u.c, 64); u = pw(u, W, p.w, W, p.b, 64); u = DS(u, 64);
-  u = up2cat(u, a); p = L(u.c, 48); u = pw(u, W, p.w, W, p.b, 48); u = DS(u, 48);
-  p = L(48, 5); const out = pw(u, W, p.w, W, p.b, 5, false);
+  t = DS(t, c1, 2); const a = DS(t, c1);
+  t = DS(a, c2, 2); const b = DS(t, c2);
+  t = DS(b, c3, 2); t = DS(t, c3); t = DS(t, c3, 1, 2); const c = DS(t, c3, 1, 4);
+  let u = up2cat(c, b); let p = L(u.c, cu2); u = pw(u, W, p.w, W, p.b, cu2); u = DS(u, cu2);
+  u = up2cat(u, a); p = L(u.c, cu1); u = pw(u, W, p.w, W, p.b, cu1); u = DS(u, cu1);
+  p = L(cu1, 5); const out = pw(u, W, p.w, W, p.b, 5, false);
   if (o !== W.length) throw new Error('lanenet: Gewichte passen nicht (' + o + ' / ' + W.length + ')');
   return out;
 }
