@@ -18,7 +18,7 @@ export const ENGINE_DEFAULTS = {
   startMin: 0.4, startMax: 8.0, startFrames: 3,
   minSpeed: 2.0, maxSpeed: 14.0, maxMiss: 0.35, maxMissNear: 0.9, maxMissLong: 1.2, nearY: 8, impactY: 17.85,
   sizeTolLo: 0.35, sizeTolHi: 2.6, topEdge: true, topEdgeOfs: 0,
-  pinsEnabled: true, pinDelay: 1.8, pinWindow: 0.3, pinRatio: 0.5, pinOccluded: 'standing',
+  pinsEnabled: true, pinDelay: 1.8, pinWindow: 0.3, pinRatio: 0.5, pinRefMin: 0.4, pinAbsMin: 0.4, pinOccluded: 'standing',
   pinZLow: 0.45, pinLumThr: 0, pinRefEvery: 0.5, cropMax: 900,
   pinTrack: false, pinTrackDur: 1.4, pinTrackLag: 0.015,
   // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
@@ -766,7 +766,7 @@ export class Engine {
     const detail = {};
     for (const id of order) {
       // sichtbare Messpixel: ohne Pixel stehender näherer Pins
-      const ratios = [];
+      const ratios = [], abss = [], refs = [];
       let vis = 0, total = 0;
       for (const m of this.pinMeas) {
         const g = m.geo[id];
@@ -791,15 +791,21 @@ export class Engine {
           }
           refFrac = rc ? Math.max(0.2, rw / rc) : 1;
         }
-        if (cnt) ratios.push((white / cnt) / refFrac);
+        if (cnt) { ratios.push((white / cnt) / refFrac); abss.push(white / cnt); refs.push(refFrac); }
       }
       ratios.sort((a, b) => a - b);
       const ratio = ratios.length ? ratios[ratios.length >> 1] : 0;
       let state;
       if (vis < Math.max(4, total * 0.12)) state = o.pinOccluded === 'down' ? 'hidden-down' : 'hidden';
-      else state = ratio >= o.pinRatio ? 'standing' : 'down';
+      else {
+        // schwache Referenz (Messfeld lag vor dem Wurf neben dem Pin): nicht hochrechnen, sondern absolut urteilen
+        const md = (a) => a.length ? [...a].sort((p, q) => p - q)[a.length >> 1] : 0;
+        const weakRef = ref && md(refs) < o.pinRefMin;
+        state = (weakRef ? md(abss) >= o.pinAbsMin : ratio >= o.pinRatio) ? 'standing' : 'down';
+      }
       if (state === 'standing' || state === 'hidden') standing.add(id);
-      detail[id] = { state, ratio: +ratio.toFixed(2), vis };
+      const md = (a) => a.length ? [...a].sort((p, q) => p - q)[a.length >> 1] : 0;
+      detail[id] = { state, ratio: +ratio.toFixed(2), vis, abs: +md(abss).toFixed(2), ref: +md(refs).toFixed(2) };
     }
     return { standing: PIN_IDS.filter(p => standing.has(p)), detail };
   }
