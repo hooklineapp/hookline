@@ -255,6 +255,14 @@ table.params td { font-variant-numeric: tabular-nums; }
         <li>Alle vier Ecken sind sicher (≥ 0,6).</li>
       </ul>
       <p>Sonst bittet die App, auf die Bahn zu tippen. Liegt der Tipp in der Bahn, die das Netz gefunden hat, bestätigt das sein Ergebnis. Sonst sucht die klassische Kantensuche um den getippten Punkt (Sobel, Hough, Fluchtpunkt, breiteste Lücke zwischen Kanten). In jedem Fall rasten die Ecken danach an den Kanten ein.</p>
+      <h3>Videos: mehrere Bilder statt eines</h3>
+      <p>Am Anfang eines Videos steht der Spieler oft direkt vor der Bahn und verdeckt Foul-Linie und Anlauf. Das Netz zieht dann gern eine Ecke auf Beine oder Hose. Deshalb prüft „Auto“ bei Videos 13 Bilder aus den ersten 6 Sekunden. Es gewinnt die Gruppe von Ergebnissen, die sich am häufigsten decken (Überlappung &gt; 0,6), und daraus je Ecke der Median: Der Spieler bewegt sich, die Bahn nicht, also fällt eine Ecke, die nur auf manchen Bildern auf ihn rutscht, heraus. Die Auswertung beginnt beim frühesten Bild dieser Gruppe, damit die Ecken auch bei schwenkender Kamera zum Startbild passen.</p>
+      <table class="params">
+        <caption>131 Bowling-Videos aus sozialen Medien, komplett durch die App</caption>
+        <tr><th>Ecken automatisch gefunden</th><td>107 statt 61 (nur erstes Bild)</td></tr>
+        <tr><th>Wurf erkannt</th><td>43 statt 23</td></tr>
+      </table>
+      <p>Ein Nachtraining mit 1.076 solchen Bildern (Spieler vor der Bahn) hat das kleine Netz an zurückgehaltenen Videos nicht verbessert, nur selbstsicherer gemacht. Es bleibt deshalb beim bisherigen Netz.</p>
       <table class="params">
         <caption>Prüfung an Bildern, die nicht im Training waren</caption>
         <tr><th>eigene Handyvideos, Startbild</th><td>10 von 11 automatisch richtig</td></tr>

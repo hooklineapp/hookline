@@ -20,6 +20,7 @@ let proc = null, cam = null, active = false, mode = 'live'; // live | calib | ba
 let corners = [], handles = [], calibrated = false, last = null, lastShot = null;
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
 let quietUntil = 0, calPos = null;   // calPos: frei gezogene Höhe des Ecken-Menüs (px)   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
+let fileStart = 0;   // Video: Auswertung ab dem Bild, auf dem die Ecken geprüft wurden
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
@@ -190,6 +191,7 @@ function placePanel(y) {
   calPos = Math.max(4, Math.min(maxY, y));
   calPanel.style.top = calPos + 'px'; calPanel.style.bottom = 'auto';
   stage.parentElement?.classList.toggle('cal-top', calPos < 60);
+  fitCalStage();
 }
 function dragPanel(e) {
   if (e.target.closest('button')) return;
@@ -201,16 +203,37 @@ function dragPanel(e) {
   el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 }
 // Menü oben oder unten – nie über den Ecken, die man gerade setzt oder schiebt
-function setCalSide(top) { calTop = top; calPos = null; calPanel.style.top = ''; calPanel.style.bottom = ''; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); }
+function setCalSide(top) { calTop = top; calPos = null; calPanel.style.top = ''; calPanel.style.bottom = ''; calPanel.classList.toggle('top', top); stage.parentElement?.classList.toggle('cal-top', top && mode === 'calib'); fitCalStage(); }
 function autoCalSide(pt) {
-  if (calSideManual || calPanel.style.display === 'none') return;
-  const R = viewRect(), pr = calPanel.getBoundingClientRect(), H = pr.height + 14;   // nur wirklich verdeckte Ecken (Griff ~14 px)
-  const pts = corners.map(c => toScreen(c[0], c[1], R)).map(([x, y]) => y + R.top);
+  if (calPanel.style.display === 'none') return;
+  if (!calSideManual) {
+    const { nTop, nBot } = coveredCorners(pt);
+    if (calTop && nTop > nBot) setCalSide(false);
+    else if (!calTop && nBot > nTop) setCalSide(true);
+  }
+  fitCalStage();
+}
+// Wie viele Ecken lägen unter dem Menü oben bzw. unten? (gerechnet mit der vollen Bildfläche, ohne Einrückung)
+function coveredCorners(pt) {
+  const P = (stage.parentElement || stage).getBoundingClientRect(), [vw, vh] = freezeBmp ? [freezeBmp.width, freezeBmp.height] : vidSize();
+  const s = Math.min(P.width / vw, P.height / vh), y0 = (P.height - vh * s) / 2, H = calPanel.getBoundingClientRect().height + 14;   // Griff ~14 px
+  const pts = corners.map(c => P.top + y0 + c[1] * vh * s);
   if (pt) pts.push(pt);
-  const sh = stage.getBoundingClientRect();
-  const nTop = pts.filter(y => y < sh.top + H).length, nBot = pts.filter(y => y > sh.bottom - H).length;
-  if (calTop && nTop > nBot) setCalSide(false);
-  else if (!calTop && nBot > nTop) setCalSide(true);
+  return { nTop: pts.filter(y => y < P.top + H).length, nBot: pts.filter(y => y > P.bottom - H).length };
+}
+// Verdeckt das Menü auf beiden Seiten Ecken (Hochformat-Video), das Bild neben dem Menü etwas kleiner zeigen
+function fitCalStage() {
+  let top = '', bottom = '';
+  if (mode === 'calib' && calPanel.style.display !== 'none' && calPos == null && corners.length) {
+    const { nTop, nBot } = coveredCorners();
+    if (calTop ? nTop : nBot) {
+      const P = (stage.parentElement || stage).getBoundingClientRect(), pr = calPanel.getBoundingClientRect();
+      if (calTop) top = Math.round(pr.bottom - P.top + 6) + 'px'; else bottom = Math.round(P.bottom - pr.top + 6) + 'px';
+    }
+  }
+  if (stage.style.top === top && stage.style.bottom === bottom) return;
+  stage.style.top = top; stage.style.bottom = bottom;
+  placeHandles(); requestDraw();
 }
 function cancelCalib() {
   // vorherige Ecken wiederherstellen, die Kalibrierung bleibt wie sie war
@@ -231,16 +254,59 @@ async function runSnap() {
   placeHandles(); calbar(true); requestDraw();
 }
 async function runAuto(target) {
-  const src = freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame();
-  if (!src) return;
   calPanel.classList.add('busy');
-  const r = await proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
+  // Video: mehrere Bilder der ersten Sekunden prüfen (der Spieler verdeckt anfangs oft Foul-Linie und Anlauf)
+  const r = fileMode && !target && video.duration > 1 ? await autoMulti() : await autoOne(target);
   calPanel.classList.remove('busy');
+  if (!r) return;
   pickLane = false;
+  if (r.t != null) { fileStart = r.t; if (freezeBmp) { unfreeze(); await doFreeze(); } }
   if (r.corners) { corners = r.ordered ? r.corners : orderCorners(r.corners); selCorner = -1; buzz(); toast(t('cal.autoOk'), 'ok'); }
   else if (!target) { pickLane = true; toast(t('cal.pick')); }   // Modell unsicher: Bahn antippen lassen
   else toast(t('cal.autoFail'), 'bad');
   placeHandles(); calbar(true); requestDraw();
+}
+async function autoOne(target, src) {
+  src = src || (freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame());
+  if (!src) return null;
+  return proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
+}
+// Bahn auf bis zu 13 Bildern (0–6 s) suchen; es gewinnt die Gruppe gleicher Ergebnisse auf den meisten Bildern,
+// daraus je Ecke der Median: eine Ecke, die nur auf manchen Bildern auf den Spieler rutscht, fällt heraus
+async function autoMulti() {
+  const t0 = video.currentTime, found = [];
+  let last = -1;
+  const seek = (t) => new Promise(res => { video.onseeked = () => { video.onseeked = null; res(); }; video.currentTime = t; });
+  for (let i = 0; i < 13; i++) {
+    const tt = Math.min(t0 + i * 0.5, video.duration - 0.1);
+    if (tt <= last) break;
+    last = tt;
+    if (i || Math.abs(video.currentTime - tt) > 0.01) await seek(tt);
+    const bmp = await grabFrame();
+    const r = bmp && await proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')) } });
+    if (r?.corners) found.push({ t: tt, r, c: r.ordered ? r.corners : orderCorners(r.corners) });
+    if (tt >= video.duration - 0.1) break;
+  }
+  if (!found.length) { if (Math.abs(video.currentTime - t0) > 0.01) await seek(t0); return { error: 'pick' }; }
+  const S2 = found.map(a => found.map(b => quadIoU(a.c, b.c)));
+  const sup = S2.map(row => row.filter(v => v > 0.6).length - 1);
+  let best = 0;
+  found.forEach((_, i) => { if (sup[i] > sup[best] || (sup[i] === sup[best] && S2[i].reduce((x, y) => x + y) > S2[best].reduce((x, y) => x + y))) best = i; });
+  const grp = found.filter((_, j) => S2[best][j] > 0.6).map(a => a.c);
+  const med = (xs) => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const c = [0, 1, 2, 3].map(k => [med(grp.map(q => q[k][0])), med(grp.map(q => q[k][1]))]);
+  // Ab dem frühesten Bild der Gruppe auswerten und dieses Bild zeigen (schwenkt die Kamera, passen die Ecken nur dort)
+  const tStart = Math.min(...found.filter((_, j) => S2[best][j] > 0.6).map(a => a.t));
+  if (Math.abs(video.currentTime - tStart) > 0.01) await seek(tStart);
+  return { ...found[best].r, corners: c, ordered: true, t: tStart };
+}
+// Überlappung zweier Bahn-Vierecke (normiert, FoulL, FoulR, KopfL, KopfR) auf einem 96er-Raster
+function quadIoU(a, b) {
+  const inside = (q, x, y) => { let s = 0; for (let i = 0; i < 4; i++) { const p = q[i], n = q[(i + 1) % 4], z = (n[0] - p[0]) * (y - p[1]) - (n[1] - p[1]) * (x - p[0]); if (z) { if (s && Math.sign(z) !== s) return false; s = Math.sign(z); } } return true; };
+  const A = [a[0], a[1], a[3], a[2]], B = [b[0], b[1], b[3], b[2]];
+  let i = 0, u = 0;
+  for (let y = 0.5; y < 96; y++) for (let x = 0.5; x < 96; x++) { const ia = inside(A, x / 96, y / 96), ib = inside(B, x / 96, y / 96); if (ia && ib) i++; if (ia || ib) u++; }
+  return u ? i / u : 0;
 }
 function placeHandles() {
   handles.forEach(x => x.remove()); handles = [];
@@ -307,7 +373,7 @@ async function finishCalib() {
   await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
   calBackup = null; pickLane = false;
   endMode();
-  if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = 0; await new Promise(r => { video.onseeked = r; }); runFile(f); }
+  if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = fileStart; await new Promise(r => { video.onseeked = r; }); runFile(f); }
 }
 // Ecken in die feste Reihenfolge bringen: Foul-Linie (unten im Bild) links/rechts, dann Kopfpins links/rechts.
 // Verhindert eine über Kreuz eingemessene Bahn, wenn die Ecken in anderer Reihenfolge getippt wurden.
@@ -436,7 +502,7 @@ function renderWizard() {
         h('button.pillbtn.primary.big', { onclick: () => {
           if (paused) togglePause();
           endMode(); setStatus('st.idle', 'ok'); buzz(40); toast(t('wiz.go'), 'ok');
-          if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = 0; video.onseeked = () => { video.onseeked = null; runFile(f); }; }
+          if (fileMode && pendingFps) { const f = pendingFps; pendingFps = 0; video.currentTime = fileStart; video.onseeked = () => { video.onseeked = null; runFile(f); }; }
         } }, icon('play'), t('btn.start'))));
   }
   calPanel.style.display = 'block';
@@ -560,7 +626,7 @@ function endMode() {
   if (wiz) { clearInterval(wiz.timer); wiz = null; }
   optCollect = null;
   mode = 'live';
-  calbar(false); stage.parentElement?.classList.remove('cal-top');
+  calbar(false); stage.parentElement?.classList.remove('cal-top'); stage.style.top = stage.style.bottom = '';
   handles.forEach(x => x.remove()); handles = [];
   $('#b-ball')?.classList.remove('on');
   loupe.style.display = 'none';
@@ -742,7 +808,7 @@ async function openVideoUrl(url, q) {
   toast(t('file.hint'));
   const fps = +(q.get('fps') || 0) || await estimateFps(video);
   video.pause(); await new Promise(r => setTimeout(r, 50)); video.pause();
-  video.currentTime = 0.001;
+  video.currentTime = 0.001; fileStart = 0;
   await new Promise(r => { video.onseeked = r; });
   // Sollwerte-Datei (Test): Ecken übernehmen
   if (q.get('gt')) {
@@ -794,7 +860,7 @@ async function runFile(fps) {
   const body = h('div', null, h('p', null, t('file.none')),
     h('ul.tips', null, h('li', null, t('file.tip1')), h('li', null, t('file.tip2')), h('li', null, t('file.tip3'))));
   const v = await sheet(t('file.result'), body, acts);
-  if (v === 'again') { corners = []; calibrated = false; pendingFps = fps; video.currentTime = 0.001; await new Promise(r => { video.onseeked = r; }); await startCalib(); }
+  if (v === 'again') { corners = []; calibrated = false; pendingFps = fps; video.currentTime = 0.001; fileStart = 0; await new Promise(r => { video.onseeked = r; }); await startCalib(); }
   else if (v === 'cam') closeFile();
 }
 // Video schließen: zurück zur Kamera mit deren Einrichtung
