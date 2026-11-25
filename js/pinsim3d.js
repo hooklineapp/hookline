@@ -50,15 +50,26 @@ export function simulateMeasured3D(shot, an, params, falls2d = {}, opts = {}) {
   const first = simulatePins3D(shot, an, params, opts);
   if (!first || !shot.pinsAfter) return first;
   const after = new Set(shot.pinsAfter), kicks = [];
-  for (const id of shot.pinsBefore || PIN_IDS) {
-    if (after.has(id) || !first.standing.includes(id)) continue;
-    const f = falls2d[id] || {}, t = f.t >= 0 ? f.t : 0.35, d = f.dir || 0;
-    kicks.push({ id, t, h: 0.3, J: [Math.sin(d) * 0.75, Math.cos(d) * 0.75, 0] });
+  // Mit Stößen läuft das Abräumen etwas anders: dann kann ein anderer, gemessen gefallener Pin stehen bleiben.
+  // Darum nachstoßen, bis alle gemessen gefallenen Pins liegen (höchstens 4 Durchgänge).
+  let sim = first, ms = first.ms;
+  for (let pass = 0; pass < 4; pass++) {
+    let added = 0;
+    for (const id of shot.pinsBefore || PIN_IDS) {
+      if (after.has(id) || !sim.standing.includes(id) || kicks.some(k => k.id === id)) continue;
+      const f = falls2d[id] || {}, t = f.t >= 0 ? f.t : 0.35, d = f.dir || 0;
+      kicks.push({ id, t, h: 0.3, J: [Math.sin(d) * 0.75, Math.cos(d) * 0.75, 0] }); added++;
+    }
+    if (!added) {   // schon gestoßen und steht trotzdem: kräftiger stoßen
+      const still = kicks.filter(k => sim.standing.includes(k.id));
+      if (!still.length) break;
+      still.forEach(k => { k.J = k.J.map(v => v * 1.6); k.t = Math.max(0, k.t - 0.05); });
+    }
+    sim = simulatePins3D(shot, an, params, { ...opts, kicks: kicks.map(k => ({ ...k, J: [...k.J] })) }); ms += sim.ms;
   }
-  if (!kicks.length) return first;
-  const second = simulatePins3D(shot, an, params, { ...opts, kicks });
-  second.kicked = kicks.map(k => k.id); second.ms += first.ms;
-  return second;
+  if (sim === first) return first;
+  sim.kicked = kicks.map(k => k.id); sim.ms = ms;
+  return sim;
 }
 
 export { tilt };

@@ -954,9 +954,10 @@ function draw() {
       const b = P(X, Y);
       let top = null;
       if (camM) { const p = camM.P(X, Y, 0.38); top = S2(p[0] / vw, p[1] / vh); }
-      c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = 1.5;
+      // nur ein dünner Strich vom Fuß bis zur Pinspitze (bei schräger Sicht liegen die Pins dicht beieinander)
+      c.strokeStyle = 'rgba(228,87,46,.9)'; c.lineWidth = 1;
       if (top) { c.beginPath(); c.moveTo(...b); c.lineTo(...top); c.stroke(); }
-      c.fillStyle = '#c0392b'; c.beginPath(); c.arc(b[0], b[1], 2, 0, 7); c.fill();
+      else { c.fillStyle = 'rgba(228,87,46,.9)'; c.beginPath(); c.arc(b[0], b[1], 1.2, 0, 7); c.fill(); }
     }
   }
   if (S.get('showCands') && last.cands) {
