@@ -1,5 +1,9 @@
 // Deutsch / Englisch. t('key', {n:1}) ersetzt {n}.
 const de = {
+  'lane.title': 'Bahnen', 'lane.sub': 'Gespeicherte Bahnen ({n})', 'lane.none': 'Noch keine Bahn gespeichert. Richte die Bahn ein und speichere sie hier – beim nächsten Mal findet Hookline die Ecken selbst wieder, auch wenn das Handy nur ungefähr gleich steht.',
+  'lane.save': 'Aktuelle Bahn speichern', 'lane.name': 'Name der Bahn', 'lane.def': 'Bahn {n}', 'lane.saved': '„{n}“ gespeichert', 'lane.full': 'Speicher voll – bitte alte Bahnen löschen',
+  'lane.loaded': '„{n}“ geladen', 'lane.found': '„{n}“ erkannt', 'lane.check': '„{n}“: Ecken prüfen und übernehmen', 'lane.moved': '„{n}“: Handy steht zu anders – Ecken bitte anpassen',
+  'lane.del': '„{n}“ löschen?', 'lane.active': 'aktiv', 'lane.nocal': 'Erst die Bahn einrichten, dann speichern.', 'lane.used': 'zuletzt {d}',
   app: 'Hookline',
   'tab.live': 'Live', 'tab.history': 'Würfe', 'tab.stats': 'Statistik', 'tab.options': 'Optionen',
   'st.nocal': 'Ecken festlegen', 'st.idle': 'Bereit', 'st.roll': 'Kugel läuft', 'st.settle': 'Pins …', 'st.cooldown': 'Warten …',
@@ -163,6 +167,10 @@ const de = {
   'misc.lowFps': 'Analyse langsamer als Kamera – Analysebreite verringern',
 };
 const en = {
+  'lane.title': 'Lanes', 'lane.sub': 'Saved lanes ({n})', 'lane.none': 'No lane saved yet. Set up the lane and save it here – next time Hookline finds the corners by itself, even if the phone is only roughly in the same place.',
+  'lane.save': 'Save current lane', 'lane.name': 'Lane name', 'lane.def': 'Lane {n}', 'lane.saved': '“{n}” saved', 'lane.full': 'Storage full – please delete old lanes',
+  'lane.loaded': '“{n}” loaded', 'lane.found': '“{n}” recognized', 'lane.check': '“{n}”: check the corners and apply', 'lane.moved': '“{n}”: phone is placed too differently – please adjust the corners',
+  'lane.del': 'Delete “{n}”?', 'lane.active': 'active', 'lane.nocal': 'Set up the lane first, then save it.', 'lane.used': 'last used {d}',
   app: 'Hookline',
   'tab.live': 'Live', 'tab.history': 'Shots', 'tab.stats': 'Stats', 'tab.options': 'Options',
   'st.nocal': 'Set corners', 'st.idle': 'Ready', 'st.roll': 'Ball rolling', 'st.settle': 'Pins …', 'st.cooldown': 'Wait',

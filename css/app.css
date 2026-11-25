@@ -614,3 +614,13 @@ button.step { background: none !important; border: 0 !important; box-shadow: non
 @keyframes upd-indet { 0% { left: -35%; } 100% { left: 100%; } }
 @keyframes upd-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .upd-pin { animation: none; } .upd-bar.indet i { animation-duration: 3s; } }
+
+/* Bahn-Profile */
+.lanelist { display: grid; gap: 8px; }
+.lanerow { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.lanerow.on { border-color: var(--acc); }
+.lanepick { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.lanepick img { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; flex: none; background: #000; }
+.lanepick span { display: grid; min-width: 0; }
+.lanepick b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lanepick small { opacity: .7; }

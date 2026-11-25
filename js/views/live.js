@@ -1,5 +1,5 @@
 // Live-Ansicht: Kamera, Ecken setzen, Kugel antippen, Overlay, Wurf-Ereignisse.
-import { h, $, toast, buzz, beep, fmt, icon, sheet } from '../ui.js';
+import { h, $, toast, buzz, beep, fmt, icon, sheet, confirmBox } from '../ui.js';
 import { t } from '../i18n.js';
 import * as S from '../settings.js';
 import { startCamera, stopStream } from '../camera.js';
@@ -13,6 +13,8 @@ import { pinPadSheet, speedStr, scoreCard, pinMini } from './common.js';
 import { openShot, openSession } from './history.js';
 import { mascot, setMood, mascotOn } from '../mascot.js';
 import { recommend, applyChanges } from '../autotune.js';
+import { lanes, activeLane, setActiveLane, saveLane, touchLane, deleteLane } from '../lanes.js';
+import { relocate, grayOf, RW } from '../vision/relocate.js';
 
 const CAL_KEY = 'bt.calib.v1';
 let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, statusPill, framePill, bowlerPill, hud, shotCard, progress;
@@ -23,6 +25,7 @@ let quietUntil = 0, calPos = null;   // calPos: frei gezogene Höhe des Ecken-Me
 let fileStart = 0;   // Video: Auswertung ab dem Bild, auf dem die Ecken geprüft wurden
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
+let lastCal = null, laneKeep = false;   // letzte Einrichtung (Referenzbild + Ecken) für Bahn-Profile
 let selCorner = -1;   // gewählte Ecke zum Verschieben (Touchpad-artig von überall)
 let wiz = null; // Einrichtungs-Assistent: { step, timer, preview, stable, target, busy }
 
@@ -106,7 +109,7 @@ async function startCam() {
     window.__camInfo = cam.info; window.__cams = cam.cams;
     hint.style.display = 'none';
     proc.attach(video, cam.track); quietUntil = performance.now() + 6000;
-    if (corners.length === 4 && !calibrated) await calibrateNow();
+    if (!calibrated && !(await autoFindLane()) && corners.length === 4 && !calibrated) await calibrateNow();
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
     if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startCalib();
   } catch (e) {
@@ -178,6 +181,7 @@ function calbar(show) {
     h('div.cal-actions', null,
       h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { if (pickLane) { pickLane = false; calbar(true); } else runAuto(null); } }, icon('magic'), t('cal.auto')),
       n === 4 ? h('button.pillbtn', { onclick: runSnap }, icon('corners'), t('cal.snap')) : null,
+      !fileMode ? h('button.pillbtn', { onclick: lanesSheet }, icon('lanes'), t('lane.title')) : null,
       h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; selCorner = -1; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
       h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
@@ -238,7 +242,7 @@ function fitCalStage() {
 function cancelCalib() {
   // vorherige Ecken wiederherstellen, die Kalibrierung bleibt wie sie war
   if (calBackup) corners = calBackup;
-  calBackup = null; pickLane = false;
+  calBackup = null; pickLane = false; laneKeep = false;
   endMode();
 }
 // grob gesetzte Ecken an die Bahnkanten und die Foul-Linie ziehen (sichtbar, vor dem Übernehmen)
@@ -429,12 +433,101 @@ function orderCorners(c) {
 async function calibrateNow(bmp) {
   bmp = bmp || await grabFrame();
   if (!bmp) return;
+  const thumb = fileMode ? null : thumbOf(bmp);   // vor dem Senden: das Bild geht an die Auswertung
   const r = await proc.request(bmp, { calibrate: corners });
   if (r.type === 'calibrated') {
     if (window.__evlog) window.__evlog.push('kal t' + video.currentTime.toFixed(2) + ' start' + fileStart + ' ' + JSON.stringify(r.info.corners));
     calibrated = true; toast(t('cal.ok', { n: r.info.features }) + (r.info.snapped ? ' · ' + t('cal.snapped') : ''), 'ok');
     if (r.info.corners) { corners = r.info.corners.map(c => [...c]); if (!fileMode) try { localStorage.setItem(CAL_KEY, JSON.stringify(corners)); } catch { /* */ } } setStatus('st.idle', 'ok'); syncPins();
+    if (thumb) { lastCal = { img: thumb, corners: corners.map(c => [...c]) }; laneAfterCal(); }
   } else toast(r.message || 'Fehler', 'bad');
+}
+
+// ---------- Bahn-Profile ----------
+function thumbOf(src) {
+  const sw = src.width || src.videoWidth, sh = src.height || src.videoHeight;
+  const c = h('canvas', { width: RW, height: Math.round(RW * sh / sw) });
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.72);
+}
+const imgOf = (url) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+async function grayUrl(url) { const i = await imgOf(url); return grayOf(i, i.naturalWidth, i.naturalHeight); }
+async function matchLane(p, B) { try { return relocate(await grayUrl(p.img), B, p.corners); } catch { return { ok: false }; } }
+const sure = (r) => r.ok && r.q >= 0.4 && r.plane >= 15;
+// Nach jeder Einrichtung: gehört sie zur aktiven Bahn (gleiche Szene), wird das Profil aufgefrischt, sonst ist keine Bahn aktiv
+async function laneAfterCal() {
+  const a = activeLane(), cal = lastCal;
+  const keep = laneKeep;
+  laneKeep = false;
+  if (!a || !cal) return;
+  const same = keep || (await matchLane(a, await grayUrl(cal.img))).ok;
+  if (same) touchLane(a.id, { img: cal.img, corners: cal.corners }); else setActiveLane(null);
+}
+// Beim Kamerastart: passende gespeicherte Bahn im Bild suchen
+async function autoFindLane() {
+  const L = lanes();
+  if (fileMode || !L.length) return false;
+  let bmp = null;
+  for (let i = 0; i < 20 && !(bmp = await grabFrame()); i++) await new Promise(r => setTimeout(r, 100));
+  if (!bmp) return false;
+  const B = grayOf(bmp, bmp.width, bmp.height), act = activeLane()?.id;
+  let best = null;
+  for (const p of [...L].sort((x, y) => (y.id === act) - (x.id === act)).slice(0, 10)) {
+    const r = await matchLane(p, B);
+    if (sure(r) && (!best || r.count > best.r.count)) best = { p, r };
+  }
+  if (!best) { bmp.close?.(); return false; }
+  corners = best.r.corners.map(c => [...c]); setActiveLane(best.p.id); laneKeep = true;
+  await calibrateNow(bmp);
+  if (calibrated) toast(t('lane.found', { n: best.p.name }), 'ok');
+  return calibrated;
+}
+async function loadLane(p) {
+  const bmp = await grabFrame();
+  if (!bmp) return;
+  const r = await matchLane(p, grayOf(bmp, bmp.width, bmp.height));
+  if (window.__evlog) window.__evlog.push('lane ' + p.name + ' ' + JSON.stringify({ ok: r.ok, q: r.q, plane: r.plane, why: r.why }));
+  setActiveLane(p.id); touchLane(p.id);
+  if (sure(r)) {
+    endMode(); corners = r.corners.map(c => [...c]); laneKeep = true;
+    await calibrateNow(bmp);
+    toast(t('lane.loaded', { n: p.name }), 'ok');
+  } else {
+    // unsicher: Ecken als Vorschlag zeigen, Nutzer prüft und übernimmt
+    bmp.close?.();
+    await startCalib();
+    corners = (r.ok ? r.corners : p.corners).map(c => [...c]); laneKeep = !!r.ok;
+    placeHandles(); calbar(true); requestDraw();
+    toast(t(r.ok ? 'lane.check' : 'lane.moved', { n: p.name }), r.ok ? '' : 'warn');
+  }
+}
+async function saveLaneFlow() {
+  if (!calibrated || !lastCal || fileMode) { toast(t('lane.nocal'), 'warn'); return; }
+  const a = activeLane();
+  const inp = h('input.inp', { value: a?.name || t('lane.def', { n: lanes().length + 1 }), placeholder: t('lane.name'), 'aria-label': t('lane.name') });
+  setTimeout(() => { inp.focus(); inp.select(); }, 250);
+  const v = await sheet(t('lane.save'), h('div', null, inp), [{ label: t('btn.cancel'), value: null }, { label: t('btn.save'), value: 'ok', primary: true }]);
+  const name = inp.value.trim();
+  if (v !== 'ok' || !name) return;
+  const l = saveLane({ id: a && a.name === name ? a.id : undefined, name, img: lastCal.img, corners: lastCal.corners });
+  if (!l) { toast(t('lane.full'), 'bad'); return; }
+  setActiveLane(l.id); toast(t('lane.saved', { n: l.name }), 'ok');
+}
+async function lanesSheet() {
+  const L = lanes(), act = activeLane()?.id;
+  let pick = null;
+  const closeS = () => [...document.querySelectorAll('.sheet-wrap')].pop()?.querySelector('.sheet-head button')?.click();
+  const day = (ms) => new Date(ms).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const body = h('div.lanelist', null, L.length ? L.map(l => h('div.lanerow' + (l.id === act ? '.on' : ''), null,
+    h('button.lanepick', { type: 'button', onclick: () => { pick = { load: l }; closeS(); } },
+      h('img', { src: l.img, alt: '' }),
+      h('span', null, h('b', null, l.name), h('small', null, (l.id === act ? t('lane.active') + ' · ' : '') + t('lane.used', { d: day(l.used || l.created) })))),
+    h('button.iconbtn', { type: 'button', 'aria-label': t('btn.delete'), title: t('btn.delete'), onclick: () => { pick = { del: l }; closeS(); } }, icon('close'))))
+    : h('p.muted', null, t('lane.none')));
+  const v = await sheet(t('lane.title'), body, fileMode ? [] : [{ label: t('lane.save'), value: 'save', primary: true }]);
+  if (v === 'save') return saveLaneFlow();
+  if (pick?.load) return loadLane(pick.load);
+  if (pick?.del) { if (await confirmBox(t('lane.del', { n: pick.del.name }))) deleteLane(pick.del.id); return lanesSheet(); }
 }
 
 
@@ -798,11 +891,12 @@ async function moreMenu() {
   const item = (val, ic, label, sub) => ({ value: val, label, icon: ic, sub });
   const v = await sheet(t('btn.more'), null, [], { menu: [
     ...(fileMode ? [item('closefile', 'close', t('file.close'))] : []),
+    ...(fileMode ? [] : [item('lanes', 'lanes', t('lane.title'), activeLane()?.name || t('lane.sub', { n: lanes().length }))]),
     item('file', 'video', t('btn.file'), t('file.short')),
     item('game', 'pins', t('h.scorecard')),
     item('fs', 'expand', t('btn.fullscreen')),
   ] });
-  if (v === 'closefile') closeFile(); else if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
+  if (v === 'closefile') closeFile(); else if (v === 'lanes') lanesSheet(); else if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
 }
 function toggleFullscreen() {
   const d = document;

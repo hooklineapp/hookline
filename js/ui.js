@@ -77,6 +77,7 @@ const ICONS = {
   swapv: '<path d="M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   reset: '<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.5L4 10"/>',
+  lanes: '<path d="M7 20 9.5 4M17 20 14.5 4M12 20v-3M12 13.5v-3M12 7V4"/>',
   hand: '<path d="M8 12V6.5a1.5 1.5 0 013 0V11M11 10.5V5a1.5 1.5 0 013 0v5.5M14 10.5V7a1.5 1.5 0 013 0v6c0 4-2.5 7-6 7-2.6 0-4-1.4-5.2-3.4L4 13.5a1.5 1.5 0 012.6-1.5L8 14"/>',
 };
 export function icon(name, cls = '') {
