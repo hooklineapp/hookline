@@ -534,7 +534,7 @@ export class Engine {
             if (k > 8) { this.track.length = k + 1; this.itrack.length = k + 1; }
             this._impact(ev); return;
           }
-          ev.push({ type: 'abort', t: ts }); this.resetShot(); this.state = 'idle'; return;
+          ev.push({ type: 'abort', t: ts, why: 'langsam', vy: +vv.vy.toFixed(2), span: +span.toFixed(1) }); this.resetShot(); this.state = 'idle'; return;
         }
       }
       if (last[2] >= o.impactY) this._impact(ev);
@@ -545,7 +545,11 @@ export class Engine {
         if (gap > lim && last[2] > o.impactY - 4.5) this._impact(ev);
         // längere Spur: weiter auf die Kugel warten (Spieler läuft durchs Bild), erst dann hochrechnen
         else if (gap > lim && span > 6) { if (gap > o.maxMissLong) this._impact(ev); }
-        else if (gap > lim) { ev.push({ type: 'abort', t: ts }); this.resetShot(); }
+        // sichere, schnelle Spur (Spieler läuft nach dem Abwurf vor der Kugel her, Handy lässt Bilder aus):
+        // bis maxMissLong auf die Kugel warten statt abzubrechen
+        // höchstens so lange, wie die Kugel bis zu den Pins bräuchte, und nie über 2 s
+        else if (gap > lim && this.track.length >= 5 && (() => { const vy = this._fitVel(this.track, Math.min(8, this.track.length))?.vy ?? 0; return vy >= o.minSpeed && gap <= Math.min(2.0, Math.max(o.maxMissLong, (o.impactY - last[2]) / vy)); })()) { /* weiter warten */ }
+        else if (gap > lim) { ev.push({ type: 'abort', t: ts, why: 'luecke', gap: +gap.toFixed(2), y: +last[2].toFixed(1), span: +span.toFixed(1), vy: +(this._fitVel(this.track, Math.min(8, this.track.length))?.vy ?? 0).toFixed(2), n: this.track.length }); this.resetShot(); }
       }
     } else if (this.state === 'settle') {
       if (!this.o.pinsEnabled) this._finish(ts, ev);
@@ -954,7 +958,7 @@ export class Engine {
       this._rectify(frame, this.H);
       active = this._foreground();
       cands = this._candidates(this._blobs());
-    } else if (this.state === 'roll' && this.lost > 20) { ev.push({ type: 'abort', t: ts }); this.resetShot(); }
+    } else if (this.state === 'roll' && this.lost > 20) { ev.push({ type: 'abort', t: ts, why: 'kamera' }); this.resetShot(); }
     this._stateStep(cands, ts, ev);
 
     const { w: rw, h: rh } = this.ref;

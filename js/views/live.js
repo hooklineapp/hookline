@@ -690,7 +690,7 @@ function onResult(m) {
   last = m;
   if (optCollect) { if (m.metrics) optCollect.samples.push(m.metrics); if (m.ms) optCollect.ms.push(m.ms); }
   if (m.state !== 'nocal') calibrated = true;
-  if (window.__evlog) { const L = window.__evlog; L.n = (L.n || 0) + 1; if (L.st !== m.state || L.n % 15 === 0) L.push((video.currentTime || 0).toFixed(2) + ' ' + (L.st = m.state) + ' ok' + (m.ok ? 1 : 0) + ' q' + (m.quality || 0).toFixed(2) + ' akt' + (m.active || 0)); for (const ev of m.events || []) L.push((video.currentTime || 0).toFixed(2) + ' ev ' + ev.type); }
+  if (window.__evlog) { const L = window.__evlog; L.n = (L.n || 0) + 1; if (L.st !== m.state || L.n % 15 === 0) L.push((video.currentTime || 0).toFixed(2) + ' ' + (L.st = m.state) + ' ok' + (m.ok ? 1 : 0) + ' q' + (m.quality || 0).toFixed(2) + ' akt' + (m.active || 0)); for (const ev of m.events || []) L.push((video.currentTime || 0).toFixed(2) + ' ev ' + ev.type + (ev.why ? ' ' + JSON.stringify({ why: ev.why, gap: ev.gap, y: ev.y, span: ev.span, vy: ev.vy, n: ev.n }) : '')); }
   for (const ev of m.events || []) handleEvent(ev);
   if (mode === 'live') {
     const key = !m.ok && S.get('trackMode') === 'hand' && m.lost > 3 ? ['st.lost', 'bad'] :
