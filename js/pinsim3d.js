@@ -2,10 +2,25 @@
 // (plus Anpassung der 2D-Simulation an die Messung); optional bleiben gemessen stehende Pins fest.
 import { PIN_IDS, HEADPIN_Y, BALL_R } from './lane.js';
 import { interpX } from './analysis.js';
-import { createWorld, step, tilt, PHYS } from './pinphys.js';
+import { createWorld, step, tilt, PHYS, PIN_ZC } from './pinphys.js';
 
 // Lage je Körper: [x, y, z, qx, qy, qz, qw] (Schwerpunkt)
 const pose = (b) => [b.p[0], b.p[1], b.p[2], b.q[0], b.q[1], b.q[2], b.q[3]];
+
+// Physik im Rahmen halten: einzelne Kontakte können Energie erzeugen (Pins flogen sonst über 100 m).
+// Pins fliegen real höchstens wenige Meter: Tempo begrenzen, nicht über die Abdeckung und nicht weit zurück
+// Richtung Spieler.
+function tame(W) {
+  for (const b of [...Object.values(W.pins), W.ball]) {
+    if (b.fixed) continue;
+    const v = Math.hypot(...b.v), vm = b === W.ball ? 12 : 9;
+    if (v > vm) b.v = b.v.map(x => x * vm / v);
+    const w = Math.hypot(...b.w);
+    if (w > 70) b.w = b.w.map(x => x * 70 / w);
+    if (b.p[2] > 0.9 && b.v[2] > 0) b.v[2] = 0;
+    if (b.p[1] < HEADPIN_Y - 1.2 && b.v[1] < 0) b.v[1] = 0;
+  }
+}
 
 export function simulatePins3D(shot, an, params = {}, opts = {}) {
   if (!an || !an.path?.length) return null;
@@ -39,6 +54,7 @@ export function simulatePins3D(shot, an, params = {}, opts = {}) {
       tOut += P.out;
     }
     step(W);
+    tame(W);
   }
   const standing = Object.entries(W.pins).filter(([, b]) => tilt(b.q) < 0.6 && b.p[2] > 0).map(([id]) => +id).sort((a, b) => a - b);
   return { frames, dur: opts.dur || P.dur, three: true, falls, standing, ms: Math.round(performance.now() - t0) };
@@ -67,10 +83,37 @@ export function simulateMeasured3D(shot, an, params, falls2d = {}, opts = {}) {
     }
     sim = simulatePins3D(shot, an, params, { ...opts, kicks: kicks.map(k => ({ ...k, J: [...k.J] })) }); ms += sim.ms;
   }
-  if (sim === first) return first;
-  sim.kicked = kicks.map(k => k.id); sim.ms = ms;
+  if (sim !== first) { sim.kicked = kicks.map(k => k.id); sim.ms = ms; }
+  // Was die Physik trotzdem nicht umwirft, kippt sichtbar um: Das Replay zeigt immer genau das gemessene Ergebnis.
+  const forced = (shot.pinsBefore || PIN_IDS).filter(id => !after.has(id) && sim.standing.includes(id));
+  if (forced.length && sim.frames.length) {
+    const fk = falls2d || {};
+    for (const id of forced) {
+      const d = fk[id]?.dir || 0, t0 = Math.max(0.15, fk[id]?.t >= 0 ? fk[id].t : 0.35), dur = 0.35;
+      const dx = Math.sin(d), dy = Math.cos(d), ax = [-dy, dx, 0];
+      const f0 = sim.frames.find(f => f.t >= t0) || sim.frames[sim.frames.length - 1];
+      const st = f0.pins[id];
+      const base = [st[0], st[1], st[2] - PIN_ZC], q0 = st.slice(3);
+      for (const f of sim.frames) {
+        if (f.t < t0) continue;
+        const u = Math.min(1, (f.t - t0) / dur), a = (Math.PI / 2) * u * u;   // beschleunigt kippen
+        const qf = [ax[0] * Math.sin(a / 2), ax[1] * Math.sin(a / 2), 0, Math.cos(a / 2)];
+        const q = qmul(qf, q0);
+        const r = 0.06 * Math.sin(a);   // liegend ruht der Pin auf seinem Bauch
+        f.pins[id] = [base[0] + dx * PIN_ZC * Math.sin(a), base[1] + dy * PIN_ZC * Math.sin(a), base[2] + PIN_ZC * Math.cos(a) + r, ...q];
+      }
+    }
+    sim.standing = sim.standing.filter(id => !forced.includes(id));
+    sim.forced = forced;
+  }
   return sim;
 }
+
+const qmul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
 
 export { tilt };
 export const STEP_OUT = PHYS.out;

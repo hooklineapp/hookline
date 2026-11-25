@@ -705,6 +705,8 @@ async function handleEvent(ev) {
   if (ev.type === 'start') { if (performance.now() > quietUntil && last?.ok !== false && mode === 'live') { buzz(20); beep(660); } }
   else if (ev.type === 'abort') { toast(t('shot.abort')); }
   else if (ev.type === 'shot') {
+    if (window.__evlog) window.__evlog.pts = ev.shot?.points;
+    if (window.__evlog) window.__evlog.push('pins ' + JSON.stringify(ev.shot?.pinsAfter) + ' ' + JSON.stringify(Object.fromEntries(Object.entries(ev.shot?.pinDetail || {}).map(([k, v]) => [k, [v.state, v.ratio, v.vis]]))));
     if (fileMode && S.get('fileOneShot')) fileEarly = true;   // Video: nach dem ersten Wurf samt Pins aufhören
     let done; savingShot = new Promise(r => { done = r; });
     try { await saveShotEvent(ev); } finally { done(); }
