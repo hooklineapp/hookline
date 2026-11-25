@@ -154,6 +154,16 @@ export function analyzeShot(points, opt = {}) {
       const steep = dn / Math.max(0.05, Math.abs(ys[k + 1] - ys[k])) > 0.3 || dp / Math.max(0.05, Math.abs(ys[k] - ys[k - 1])) > 0.3;
       if (dp > 0.08 && dn > 0.08 && nb < 0.5 * Math.min(dp, dn) && steep) ww[k] = 0;
     }
+    // Enden der Spur (nur ein Nachbar): Punkte abwerfen, solange sie gegenüber dem letzten guten Punkt
+    // seitlich unmöglich steil springen (am Bahnende oft Pins/Spiegelungen, am Anfang Hand/Bein)
+    if (opt.physik !== false && ys.length > 6) {
+      const jump = (a, b) => Math.abs(xs[a] - xs[b]) > 0.08 && Math.abs(xs[a] - xs[b]) / Math.max(0.05, Math.abs(ys[a] - ys[b])) > 0.3;
+      for (let e = 0, g = 1; e < 3 && g < ys.length; ) { if (!ww[g]) { g++; continue; } if (jump(e, g)) { ww[e] = 0; e = g; g = e + 1; } else break; }
+      // danach zeitlich vorwärts: jeder Punkt muss zum letzten verlässlichen Punkt passen (mehrere falsche Punkte
+      // hintereinander am Bahnende passen untereinander, aber nicht zur bisherigen Spur)
+      let g = ww.findIndex(w => w > 0);
+      for (let k = g + 1; g >= 0 && k < ys.length; k++) { if (!ww[k]) continue; if (jump(k, g)) ww[k] = 0; else g = k; }
+    }
     // mit Physik: Ausreißer gegen den Ein-Bogen-Verlauf prüfen (sonst zieht ein einzelner Fehlpunkt den Bogen mit)
     const fit = (w) => whittaker(grid, ys, xs, lambda, w);
     let z = fit(ww);
