@@ -40,6 +40,57 @@ function quadfit(xs, ys, ws) {
   return solve([[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]], T);
 }
 
+// Physik: Eine Kugel biegt nach dem Abwurf nur in eine Richtung (Rutschen -> Hook -> Rollen).
+// Die Reibung wirkt gegen die Gleitrichtung der Kontaktstelle, und die bleibt beim Rutschen gleich;
+// die Querneigung dx/dy ändert sich deshalb nur in eine Richtung. Ein Hin und Her ist Messrauschen.
+// Modell: x(y) = a + b·y + Σ d_j·max(0, y − k_j) mit allen d_j ≥ 0 (bzw. alle ≤ 0), Knoten alle 0,5 m,
+// gewichtete kleinste Quadrate + Glättungsstrafe auf d_j (nicht-negative kleinste Quadrate, Lawson–Hanson).
+function nnls(A, b, maxIt = 400) {
+  const m = A.length, n = A[0].length, x = new Array(n).fill(0), P = new Array(n).fill(false);
+  const grad = () => { const r = b.map((bi, i) => bi - A[i].reduce((s, a, j) => s + a * x[j], 0)); const w = new Array(n).fill(0); for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) w[j] += A[i][j] * r[i]; return w; };
+  const lsq = (idx) => {   // kleinste Quadrate nur auf den Spalten idx (Normalgleichungen)
+    const k = idx.length, M = Array.from({ length: k }, () => new Array(k).fill(0)), v = new Array(k).fill(0);
+    for (let i = 0; i < m; i++) for (let p = 0; p < k; p++) { const ap = A[i][idx[p]]; if (!ap) continue; v[p] += ap * b[i]; for (let q = 0; q < k; q++) M[p][q] += ap * A[i][idx[q]]; }
+    for (let p = 0; p < k; p++) M[p][p] += 1e-12;
+    return solve(M, v);
+  };
+  for (let it = 0; it < maxIt; it++) {
+    const w = grad(); let jm = -1, wm = 1e-10;
+    for (let j = 0; j < n; j++) if (!P[j] && w[j] > wm) { wm = w[j]; jm = j; }
+    if (jm < 0) break;
+    P[jm] = true;
+    for (let inner = 0; inner < 100; inner++) {
+      const idx = []; P.forEach((p, j) => p && idx.push(j));
+      const z = lsq(idx);
+      if (z.every(v => v > 0)) { idx.forEach((j, p) => { x[j] = z[p]; }); break; }
+      let al = 1;
+      idx.forEach((j, p) => { if (z[p] <= 0) al = Math.min(al, x[j] / (x[j] - z[p] + 1e-300)); });
+      idx.forEach((j, p) => { x[j] += al * (z[p] - x[j]); if (x[j] <= 1e-12) { x[j] = 0; P[j] = false; } });
+    }
+  }
+  return x;
+}
+function oneWayHook(grid, ys, xs, ww, lambda) {
+  const y0 = grid[0], y1 = grid[grid.length - 1];
+  if (y1 - y0 < 2) return null;
+  const knots = []; for (let k = y0 + 0.5; k < y1 - 0.25; k += 0.5) knots.push(k);
+  const step = grid[1] - grid[0], reg = Math.sqrt(lambda) * step * 2;
+  let best = null, bestE = Infinity;
+  for (const sg of [1, -1]) {
+    // Spalten: a+, a−, b+, b−, dann d_j (Vorzeichen sg) – alle ≥ 0
+    const row = (y) => [1, -1, y - y0, -(y - y0), ...knots.map(k => sg * Math.max(0, y - k))];
+    const A = [], b = [];
+    ys.forEach((y, i) => { if (!ww[i]) return; const s = Math.sqrt(ww[i]); A.push(row(y).map(v => v * s)); b.push(xs[i] * s); });
+    knots.forEach((_, j) => { const r = new Array(4 + knots.length).fill(0); r[4 + j] = reg; A.push(r); b.push(0); });
+    const c = nnls(A, b);
+    const f = (y) => row(y).reduce((s, v, j) => s + v * c[j], 0);
+    let e = 0; ys.forEach((y, i) => { const d = xs[i] - f(y); e += ww[i] * d * d; });
+    c.slice(4).forEach(d => { e += (reg * d) ** 2; });
+    if (e < bestE) { bestE = e; best = grid.map(f); }
+  }
+  return best;
+}
+
 export function interpX(path, y) {
   if (!path.length) return NaN;
   if (y <= path[0][0]) return path[0][1];
@@ -106,20 +157,22 @@ export function analyzeShot(points, opt = {}) {
       if (nw.every((w, k) => w === ww[k])) break;
       ww = nw; z = whittaker(grid, ys, xs, lambda, ww);
     }
+    if (opt.physik !== false) z = oneWayHook(grid, ys, xs, ww, lambda) || z;
     path = grid.map((y, i) => [y, z[i]]);
     var dropped = ww.map((w, k) => w === 0 ? k : -1).filter(k => k >= 0);
   } else path = pts.map(p => [p[2], p[1]]);
   // linear bis Foul-Linie und Kopfpin verlängern
   const extrap = { start: false, end: false };
   if (path[0][0] > 0.05) {
-    const s = slopeAt(path, path[0][0] + 1.2, 1.0);
+    const s = opt.physik !== false && path.length > 1 ? (path[1][1] - path[0][1]) / (path[1][0] - path[0][0]) : slopeAt(path, path[0][0] + 1.2, 1.0);
     const [y0, x0] = path[0];
     const pre = []; for (let y = 0; y < y0; y += step) pre.push([y, x0 - s * (y0 - y)]);
     path = pre.concat(path); extrap.start = true;
   }
   const last = path[path.length - 1];
   if (last[0] < HEADPIN_Y) {
-    const s = slopeAt(path, last[0] - 1.0, 0.8);
+    const pl = path[path.length - 2];
+    const s = opt.physik !== false && pl ? (last[1] - pl[1]) / (last[0] - pl[0]) : slopeAt(path, last[0] - 1.0, 0.8);
     for (let y = last[0] + step; y <= HEADPIN_Y + 1e-6; y += step) path.push([y, last[1] + s * (y - last[0])]);
     if (path[path.length - 1][0] < HEADPIN_Y) path.push([HEADPIN_Y, last[1] + s * (HEADPIN_Y - last[0])]);
     extrap.end = true;
