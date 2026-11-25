@@ -147,7 +147,16 @@ export function analyzeShot(points, opt = {}) {
   let path;
   if (grid.length >= 4) {
     let ww = ys.map(pw);
-    let z = whittaker(grid, ys, xs, lambda, ww);
+    // Einzelner Sprung (Pin, Spiegelung): weicht von beiden zeitlichen Nachbarn > 8 cm ab, die Nachbarn selbst
+    // liegen dicht beieinander, und der Sprung wäre seitlich viel steiler, als eine Kugel laufen kann
+    if (opt.physik !== false) for (let k = 1; k < ys.length - 1; k++) {
+      const dp = Math.abs(xs[k] - xs[k - 1]), dn = Math.abs(xs[k] - xs[k + 1]), nb = Math.abs(xs[k + 1] - xs[k - 1]);
+      const steep = dn / Math.max(0.05, Math.abs(ys[k + 1] - ys[k])) > 0.3 || dp / Math.max(0.05, Math.abs(ys[k] - ys[k - 1])) > 0.3;
+      if (dp > 0.08 && dn > 0.08 && nb < 0.5 * Math.min(dp, dn) && steep) ww[k] = 0;
+    }
+    // mit Physik: Ausreißer gegen den Ein-Bogen-Verlauf prüfen (sonst zieht ein einzelner Fehlpunkt den Bogen mit)
+    const fit = (w) => whittaker(grid, ys, xs, lambda, w);
+    let z = fit(ww);
     // Ausreißer (Pins, Hand, Schatten) entfernen und neu glätten
     for (let it = 0; it < 2; it++) {
       const res = ys.map((y, k) => Math.abs(xs[k] - interpX(grid.map((g, i) => [g, z[i]]), y)));
@@ -155,7 +164,7 @@ export function analyzeShot(points, opt = {}) {
       const lim = Math.max(0.04, 4 * med);
       const nw = ww.map((w, k) => res[k] > lim ? 0 : w);
       if (nw.every((w, k) => w === ww[k])) break;
-      ww = nw; z = whittaker(grid, ys, xs, lambda, ww);
+      ww = nw; z = fit(ww);
     }
     if (opt.physik !== false) z = oneWayHook(grid, ys, xs, ww, lambda) || z;
     path = grid.map((y, i) => [y, z[i]]);
