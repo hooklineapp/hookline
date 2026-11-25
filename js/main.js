@@ -7,7 +7,7 @@ import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 
-window.BT_VERSION = '1.17.1';
+window.BT_VERSION = '1.17.2';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac && /^[0-9a-f]{6}$/i.test(ac)) S.set('accentColor', '#' + ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));

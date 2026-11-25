@@ -368,7 +368,9 @@ function showLoupe(x, y) {
 }
 async function finishCalib() {
   if (corners.length !== 4) { toast(t('cal.hint', { p: '4' })); return; }
-  corners = orderCorners(corners);
+  // nur umsortieren, wenn die Reihenfolge nicht stimmen kann (Auto/Modell und nummerierte Griffe sind schon geordnet;
+  // bei sehr schräger Sicht hält die Form-Regel sonst eine Bahnkante für die Foul-Linie)
+  if (!cornersPlausible(corners)) corners = orderCorners(corners);
   if (!fileMode) localStorage.setItem(CAL_KEY, JSON.stringify(corners));
   await calibrateNow(freezeBmp ? await createImageBitmap(freezeBmp) : null);
   calBackup = null; pickLane = false;
@@ -380,6 +382,22 @@ async function finishCalib() {
 // Ecken in beliebiger Reihenfolge: Rollen aus der Form bestimmen (Foul-Linie links/rechts, Kopfpin-Linie links/rechts).
 // Die vier Punkte werden zum Viereck geordnet; die beiden längeren gegenüberliegenden Seiten sind die Bahnkanten,
 // von den kurzen Seiten ist die breitere die Foul-Linie (näher an der Kamera). Links/rechts aus der Blickrichtung.
+// FoulL, FoulR, KopfL, KopfR: Viereck ohne Überkreuzung, Foul-Linie tiefer im Bild als die Kopfpin-Linie,
+// links liegt links (an beiden Enden)
+function cornersPlausible(c) {
+  if (!c || c.length !== 4) return false;
+  const [vw, vh] = vidSize(), p = c.map(([x, y]) => [x * vw, y * vh]);
+  const q = [p[0], p[1], p[3], p[2]];
+  let s = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4], d = q[(i + 2) % 4];
+    const z = (b[0] - a[0]) * (d[1] - b[1]) - (b[1] - a[1]) * (d[0] - b[0]);
+    if (!z) return false;
+    if (s && Math.sign(z) !== s) return false;
+    s = Math.sign(z);
+  }
+  return (p[0][1] + p[1][1]) / 2 > (p[2][1] + p[3][1]) / 2 && p[0][0] < p[1][0] && p[2][0] < p[3][0];
+}
 function orderCorners(c) {
   if (!c || c.length !== 4) return c;
   const [vw, vh] = vidSize(), px = c.map(([x, y]) => [x * vw, y * vh]);
@@ -413,6 +431,7 @@ async function calibrateNow(bmp) {
   if (!bmp) return;
   const r = await proc.request(bmp, { calibrate: corners });
   if (r.type === 'calibrated') {
+    if (window.__evlog) window.__evlog.push('kal t' + video.currentTime.toFixed(2) + ' start' + fileStart + ' ' + JSON.stringify(r.info.corners));
     calibrated = true; toast(t('cal.ok', { n: r.info.features }) + (r.info.snapped ? ' · ' + t('cal.snapped') : ''), 'ok');
     if (r.info.corners) { corners = r.info.corners.map(c => [...c]); if (!fileMode) try { localStorage.setItem(CAL_KEY, JSON.stringify(corners)); } catch { /* */ } } setStatus('st.idle', 'ok'); syncPins();
   } else toast(r.message || 'Fehler', 'bad');
@@ -671,6 +690,7 @@ function onResult(m) {
   last = m;
   if (optCollect) { if (m.metrics) optCollect.samples.push(m.metrics); if (m.ms) optCollect.ms.push(m.ms); }
   if (m.state !== 'nocal') calibrated = true;
+  if (window.__evlog) { const L = window.__evlog; L.n = (L.n || 0) + 1; if (L.st !== m.state || L.n % 15 === 0) L.push((video.currentTime || 0).toFixed(2) + ' ' + (L.st = m.state) + ' ok' + (m.ok ? 1 : 0) + ' q' + (m.quality || 0).toFixed(2) + ' akt' + (m.active || 0)); for (const ev of m.events || []) L.push((video.currentTime || 0).toFixed(2) + ' ev ' + ev.type); }
   for (const ev of m.events || []) handleEvent(ev);
   if (mode === 'live') {
     const key = !m.ok && S.get('trackMode') === 'hand' && m.lost > 3 ? ['st.lost', 'bad'] :
