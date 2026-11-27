@@ -109,6 +109,7 @@ const listeners = new Set();
 export function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* privat */ }
+  if (saved.startMax === 8) delete saved.startMax;   // alter Standard (8 m) → neuer Standard
   values = Object.fromEntries(SCHEMA.map(s => [s.key, saved[s.key] ?? s.def]));
   return values;
 }

@@ -15,12 +15,15 @@ export const ENGINE_DEFAULTS = {
   detMode: 'both',        // both | motion | color
   motionThr: 38, devK: 3.0, bgRate: 0.06, fgAbsorb: 0.004,
   colorTol: 1.0, lumTol: 1.0, minColorFrac: 0.15,
-  startMin: 0.4, startMax: 8.0, startFrames: 3,
+  startMin: 0.4, startMax: 14.0, startFrames: 3, seedDt: 0.08, seedDtFrom: 8, seedNoise: 0.8,
   minSpeed: 2.0, maxSpeed: 14.0, maxMiss: 0.35, maxMissNear: 0.9, maxMissLong: 1.2, nearY: 8, impactY: 17.85,
   sizeTolLo: 0.35, sizeTolHi: 2.6, topEdge: true, topEdgeOfs: 0,
   pinsEnabled: true, pinDelay: 1.8, pinWindow: 0.3, pinRatio: 0.5, pinRefMin: 0.4, pinAbsMin: 0.4, pinOccluded: 'standing',
   pinZLow: 0.45, pinLumThr: 0, pinRefEvery: 0.5, cropMax: 900,
   pinTrack: false, pinTrackDur: 1.4, pinTrackLag: 0.015,
+  // Kehrbalken: Streifen knapp über den Pinköpfen (sweepY m, Höhe sweepZ) über die ganze Breite verändert -> Pins davor messen
+  pinAlign: true, pinHeads: true, pinHeadMinW: 4, pinPair: 'back', pinSlide: 0, pinAlignShift: 30, pinAlignScale: [0.8, 1.25],
+  sweepGuard: false, pinEarly: 0.5, sweepY: 17.9, sweepZ: [0.4, 0.44, 0.48], sweepCols: 20, sweepDiff: 35, sweepThr: 0.6, sweepHold: 0, sweepArm: 0.4, sweepCalmDur: 0.1, debugSweep: false,
   // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
   // Nachbarschaftsvergleich (nbPx) und weiche Kugelfarbe im Lauf sind aus, weil sie saubere Aufnahmen verschlechtern
   gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
@@ -123,7 +126,7 @@ export class Engine {
     if (!this.ref || !this.o.pinsEnabled || !this.cam) return null;
     const ts = t / 1000;
     const need = (this.state === 'idle' && ts - this.lastPinRefT >= this.o.pinRefEvery) ||
-      (this.state === 'settle' && ts >= this.tPinAt) || this._wantTrack(ts);
+      (this.state === 'settle' && ts >= (this.o.sweepGuard && this.pinRef ? this.tImpact + this.o.pinEarly : this.tPinAt)) || this._wantTrack(ts);
     if (!need) return null;
     return this.pinRect();
   }
@@ -455,14 +458,24 @@ export class Engine {
     const zone = cands.filter(c => (anyColor ? c.size < o.motionSeedSize : c.colorOk) && c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
     let best = null;
     if (seed.length) {
-      const [lt, lx, ly] = seed[seed.length - 1];
-      const dt = ts - lt;
-      if (dt > 0.25) seed = [];
-      else for (const c of zone) {
-        const vy = (c.Y - ly) / Math.max(dt, 1e-3), vx = Math.abs(c.X - lx) / Math.max(dt, 1e-3);
-        if (vy >= o.minSpeed * 0.6 && vy <= o.maxSpeed * 1.3 && vx < 2.5) {
-          const sc = c.size + Math.abs(vy - 7) * 0.05;
-          if (!best || sc < best.sc) best = { c, sc };
+      const last = seed[seed.length - 1];
+      if (ts - last[0] > 0.25) seed = [];
+      else {
+        // Bezugspunkt mindestens seedDt zurück: bei hoher Bildrate und flachem Blick ist der Weg von Bild zu Bild
+        // kleiner als das Messrauschen der Entfernung; ein einzelner kleiner Rücksprung darf die Spur nicht beenden
+        // (nur für Spuren, die weit hinten beginnen: dort ist ein Bildpixel viele Zentimeter)
+        const robust = this._robustSeed(seed);
+        let ref = last;
+        if (robust) { ref = seed[0]; for (let k = seed.length - 1; k >= 0; k--) if (ts - seed[k][0] >= o.seedDt) { ref = seed[k]; break; } }
+        const dt = ts - ref[0], short = robust && dt < o.seedDt;
+        for (const c of zone) {
+          const vy = (c.Y - ref[2]) / Math.max(dt, 1e-3), vx = Math.abs(c.X - ref[1]) / Math.max(dt, 1e-3);
+          const ok = short ? Math.abs(c.Y - last[2]) < o.seedNoise && Math.abs(c.X - last[1]) < 0.3
+            : vy >= o.minSpeed * 0.6 && vy <= o.maxSpeed * 1.3 && vx < 2.5;
+          if (ok) {
+            const sc = c.size + (short ? Math.abs(c.Y - last[2]) : Math.abs(vy - 7) * 0.05);
+            if (!best || sc < best.sc) best = { c, sc };
+          }
         }
       }
     }
@@ -470,16 +483,19 @@ export class Engine {
     if (zone.length) { zone.sort((a, b) => a.size - b.size || a.Y - b.Y); return [[ts, zone[0].X, zone[0].Y, zone[0].u, zone[0].v]]; }
     return seed;
   }
+  _robustSeed(seed) { return this.o.seedDt > 0 && seed.length > 0 && seed[0][2] > this.o.seedDtFrom; }
   _seedReady(seed) {
     if (seed.length < this.o.startFrames) return false;
-    const v = this._fitVel(seed);
+    const robust = this._robustSeed(seed);
+    if (robust && seed[seed.length - 1][0] - seed[0][0] < 2 * this.o.seedDt) return false;
+    const v = this._fitVel(seed, robust ? 12 : 6);
     return !!v && v.vy >= this.o.minSpeed && v.vy <= this.o.maxSpeed;
   }
   _startRoll(seed, ts, ev, restart) {
     this.state = 'roll'; this.track = seed.map(p => [p[0], p[1], p[2]]);
     this.itrack = seed.map(p => [p[0], (p[3] + 0.5) / this.ref.w, (p[4] + 0.5) / this.ref.h]);
     this.tStart = seed[0][0]; this.lastSeen = ts; this.alt = []; this.seedM = [];
-    if (!restart) this.pinRef = this.pinRefCand;
+    if (!restart) { this.pinRef = this.pinRefCand; this._alignPins(this.pinRef); }
     ev.push({ type: restart ? 'restart' : 'start', t: this.tStart });
   }
 
@@ -552,7 +568,7 @@ export class Engine {
         else if (gap > lim) { ev.push({ type: 'abort', t: ts, why: 'luecke', gap: +gap.toFixed(2), y: +last[2].toFixed(1), span: +span.toFixed(1), vy: +(this._fitVel(this.track, Math.min(8, this.track.length))?.vy ?? 0).toFixed(2), n: this.track.length }); this.resetShot(); }
       }
     } else if (this.state === 'settle') {
-      if (!this.o.pinsEnabled) this._finish(ts, ev);
+      if (!this.o.pinsEnabled || this._pinsReady) this._finish(ts, ev);
       else if (ts >= this.tPinAt + o.pinWindow && this.pinMeas.length) this._finish(ts, ev);
       else if (ts >= this.tPinAt + o.pinWindow + 1.0) this._finish(ts, ev);
     } else if (this.state === 'cooldown') {
@@ -566,17 +582,19 @@ export class Engine {
     if (v && v.vy > 2) t = v.t0 + (this.o.impactY - v.ay) / v.vy;
     else { const l = this.track[this.track.length - 1]; t = l[0] + Math.max(0, this.o.impactY - l[2]) / 7.5; }
     this.tImpact = t; this.tPinAt = t + this.o.pinDelay; this.state = 'settle'; this.pinMeas = [];
+    this.pinBuf = []; this.sweepRun = null; this.sweepCalm = null; this.sweepArmed = false; this.sweepT = null; this._pinsReady = false; this.sweepLog = this.o.debugSweep ? [] : null;
     ev.push({ type: 'impact', t });
   }
 
   _finish(ts, ev) {
     let pins = null;
-    if (this.o.pinsEnabled && this.pinMeas.length) pins = this._decidePins();
+    if (this.o.pinsEnabled && this.pinMeas.length) pins = this.o.pinHeads && this.pinAl && this._headsUsable() ? this._decidePinsHeads() : this._decidePins();
     if (pins && this.o.ballHitCheck) this._ballHitCheck(pins);
     const shot = {
       tStart: this.tStart, tImpact: this.tImpact, points: this.track.map(p => [+p[0].toFixed(4), +p[1].toFixed(4), +p[2].toFixed(4)]),
       itrack: this.itrack.map(p => [+p[0].toFixed(4), +p[1].toFixed(5), +p[2].toFixed(5)]),
-      pinsBefore: [...this.pinsBefore], pinsAfter: pins ? pins.standing : null, pinDetail: pins ? pins.detail : null,
+      pinAlign: this.pinAl ? { s: +this.pinAl.s.toFixed(3), t: +this.pinAl.t.toFixed(3), du: this.pinAl.du, dv: this.pinAl.dv, gain: this.pinAl.gain } : null, pinsBefore: [...this.pinsBefore], pinsAfter: pins ? pins.standing : null, pinDetail: pins ? pins.detail : null,
+      sweepT: this.sweepT, ...(this.sweepLog ? { sweepLog: this.sweepLog } : {}),
       cam: this._camSnapshot(),
     };
     if (this.o.pinTrack && this.pinSeries.length >= 6) shot.pinTrack = this._pinTimeline(pins ? pins.standing : null);
@@ -611,6 +629,63 @@ export class Engine {
   }
 
   // ---- Pins ----
+  // Pin-Projektion mit Feinabgleich (Verschiebung + Maßstab um die Pinfeldmitte, Bildpixel). Die Kamera aus den vier
+  // Bahnecken liegt bei flachem Blickwinkel leicht daneben; der Abgleich am Referenzbild vor dem Wurf setzt die Pins
+  // auf die echten weißen Silhouetten.
+  _PP(cam, X, Y, Z) {
+    const p = cam.P(X, Y, Z), a = this.pinAl;
+    return a ? [a.cu + a.s * (p[0] - a.cu) + a.du, a.cv + a.t * (p[1] - a.cv) + a.dv, p[2]] : p;
+  }
+  _alignPins(ref) {
+    this.pinAl = null;
+    const o = this.o;
+    if (!o.pinAlign || !ref?.cam || !ref.rect) return;
+    const { w, h } = this.ref, r = ref.rect, sx = ref.w / (r.w * w), sy = ref.h / (r.h * h), cam = ref.cam;
+    const ids = PIN_IDS.filter(p => this.pinsBefore.includes(p));
+    if (ids.length < 3) return;
+    const inn = [], out = [];
+    let cu = 0, cv = 0;
+    for (const id of ids) {
+      const [X, Y] = PINS[id], [c0, c1] = cam.P(X, Y, PIN_H / 2); cu += c0 / ids.length; cv += c1 / ids.length;
+      for (const zf of [0.4, 0.55, 0.7, 0.8, 0.88, 0.95]) for (const lf of [-0.5, 0, 0.5]) {
+        const p = cam.P(X + lf * pinRadius(zf * PIN_H), Y, zf * PIN_H); inn.push(p[0], p[1]);
+      }
+      for (const lf of [-0.5, 0, 0.5]) for (const zf of [1.08, 1.2]) { const p = cam.P(X + lf * 0.03, Y, PIN_H * zf); out.push(p[0], p[1]); }
+    }
+    const L = ref.L, cw = ref.w, ch = ref.h;
+    const mean = (pts, s, t, du, dv) => {
+      let acc = 0, n = 0;
+      for (let i = 0; i < pts.length; i += 2) {
+        const u = cu + s * (pts[i] - cu) + du, v = cv + t * (pts[i + 1] - cv) + dv;
+        const x = Math.round((u + 0.5 - r.x * w) * sx - 0.5), y = Math.round((v + 0.5 - r.y * h) * sy - 0.5);
+        if (x < 0 || y < 0 || x >= cw || y >= ch) continue;
+        acc += L[y * cw + x]; n++;
+      }
+      return n > pts.length / 4 ? acc / n : NaN;
+    };
+    const score = (s, t, du, dv) => mean(inn, s, t, du, dv) - mean(out, s, t, du, dv);
+    const S = o.pinAlignShift, [s0, s1] = o.pinAlignScale;
+    const st = Math.max(1, Math.round(1 / sx));
+    let best = { v: score(1, 1, 0, 0), s: 1, t: 1, du: 0, dv: 0 };
+    const base = best.v;
+    // grob (Maßstab gemeinsam), dann senkrechten Maßstab und Lage fein
+    for (let s = s0; s <= s1 + 1e-9; s += 0.025) for (let dv = -S; dv <= S; dv += 2 * st) for (let du = -S; du <= S; du += 2 * st) {
+      const v = score(s, s, du, dv);
+      if (v > best.v) best = { v, s, t: s, du, dv };
+    }
+    const b0 = { ...best };
+    for (let t = b0.s * 0.8; t <= b0.s * 1.35; t += 0.025) for (let dv = b0.dv - 3 * st; dv <= b0.dv + 3 * st; dv += st) for (let du = b0.du - 2 * st; du <= b0.du + 2 * st; du += st) {
+      const v = score(b0.s, t, du, dv);
+      if (v > best.v) best = { v, s: b0.s, t, du, dv };
+    }
+    if (!Number.isFinite(best.v) || !(best.v > (base || 0) + 8)) return;
+    this.pinAl = { cu, cv, s: best.s, t: best.t, du: best.du, dv: best.dv, gain: +(best.v - base).toFixed(1) };
+    const g = this._pinGeometry(ref.cam, { rect: ref.rect, width: ref.w, height: ref.h });
+    // nur für die Kopfzählung: zu kleine oder angeschnittene Köpfe -> ohne Abgleich (alte Messung bleibt unverändert)
+    if (!ids.every(id => { const h = g[id].head; return h.w >= o.pinHeadMinW && h.top >= 1 && h.bot < ref.h - 1 && h.x >= 0 && h.x < ref.w; })) { this.pinAl = null; return; }
+    ref.geo = g;
+  }
+
   _pinGeometry(cam, crop) {
     const { w, h } = this.ref;
     const r = crop.rect, cw = crop.width, ch = crop.height;
@@ -622,12 +697,12 @@ export class Engine {
       const [X, Y] = PINS[id];
       const dx = X - cxp, dy = Y - cyp, dist = Math.hypot(dx, dy);
       const px = -dy / dist, py = dx / dist; // quer zur Blickrichtung
-      const [, vb] = toC(...cam.P(X, Y, 0)), [, vt] = toC(...cam.P(X, Y, PIN_H));
+      const [, vb] = toC(...this._PP(cam, X, Y, 0)), [, vt] = toC(...this._PP(cam, X, Y, PIN_H));
       const steps = Math.max(8, Math.ceil(Math.abs(vb - vt) * 2));
       const full = new Set(), meas = new Set(), span = [];
       for (let s = 0; s <= steps; s++) {
         const z = PIN_H * s / steps, rr = pinRadius(z) * 0.92;
-        const [ua, va] = toC(...cam.P(X - px * rr, Y - py * rr, z)), [ub, vb2] = toC(...cam.P(X + px * rr, Y + py * rr, z));
+        const [ua, va] = toC(...this._PP(cam, X - px * rr, Y - py * rr, z)), [ub, vb2] = toC(...this._PP(cam, X + px * rr, Y + py * rr, z));
         const row = Math.round((va + vb2) / 2);
         if (row < 0 || row >= ch) continue;
         const a = Math.max(0, Math.round(Math.min(ua, ub))), b = Math.min(cw - 1, Math.round(Math.max(ua, ub)));
@@ -638,7 +713,9 @@ export class Engine {
           if (z >= this.o.pinZLow * PIN_H && z <= PIN_H * 0.96) meas.add(k);
         }
       }
-      geo[id] = { dist, full, meas, span };
+      const [hu] = toC(...this._PP(cam, X, Y, 0.85 * PIN_H)), [, ht] = toC(...this._PP(cam, X, Y, 0.96 * PIN_H)), [, hb] = toC(...this._PP(cam, X, Y, 0.72 * PIN_H));
+      const [hl] = toC(...this._PP(cam, X - px * 0.03, Y - py * 0.03, 0.85 * PIN_H)), [hr] = toC(...this._PP(cam, X + px * 0.03, Y + py * 0.03, 0.85 * PIN_H));
+      geo[id] = { dist, full, meas, span, head: { x: hu, top: Math.round(Math.min(ht, hb)), bot: Math.round(Math.max(ht, hb)), w: Math.abs(hr - hl) } };
     }
     return geo;
   }
@@ -655,6 +732,54 @@ export class Engine {
     this.pinMeas.push({ L: this._lum(crop), geo, w: crop.width, h: crop.height });
   }
 
+  // ---- Kehrbalken ----
+  // Nach dem Wurf senkt die Pinmaschine den Kehrbalken vor die Pins – je nach Bahn schon nach ~1 s, also vor der
+  // normalen Messung. Erkennung: ein Streifen quer über die ganze Bahnbreite ändert sich
+  // gleichzeitig gegenüber dem Referenzbild (umfallende Pins ändern nur einzelne Stellen). Dann zählen die Bilder
+  // kurz davor. Der Balken kommt von oben: der Streifen liegt knapp über den Pinköpfen (fliegende Pins treffen
+  // nur einzelne Stellen). Ab pinEarly nach dem Einschlag wird dafür jedes Bild gemessen und kurz gepuffert.
+  _lumAt(m, cam, rect, X, Y, Z) {
+    const { w, h } = this.ref, [u, v] = this._PP(cam, X, Y, Z);
+    const x = Math.round((u + 0.5 - rect.x * w) * m.w / (rect.w * w) - 0.5), y = Math.round((v + 0.5 - rect.y * h) * m.h / (rect.h * h) - 0.5);
+    return x < 0 || y < 0 || x >= m.w || y >= m.h ? -1 : m.L[y * m.w + x];
+  }
+  _sweepScore(m, rect) {
+    const o = this.o, ref = this.pinRef;
+    if (!ref?.rect || !ref.cam) return 0;
+    let n = 0, chg = 0;
+    for (let i = 0; i < o.sweepCols; i++) {
+      const X = 0.03 + (LANE_W - 0.06) * (i + 0.5) / o.sweepCols;
+      let d = 0, k = 0;
+      for (const Z of o.sweepZ) {
+        const a = this._lumAt(m, this.cam, rect, X, o.sweepY, Z), b = this._lumAt(ref, ref.cam, ref.rect, X, o.sweepY, Z);
+        if (a < 0 || b < 0) continue;
+        d += Math.abs(a - b); k++;
+      }
+      if (!k) continue;
+      n++; if (d / k > o.sweepDiff) chg++;
+    }
+    return n >= o.sweepCols * 0.5 ? chg / n : 0;
+  }
+  _sweepStep(crop, ts) {
+    const o = this.o;
+    const m = { L: this._lum(crop), geo: this._pinGeometry(this.cam, crop), w: crop.width, h: crop.height, ts };
+    const s = this._sweepScore(m, crop.rect);
+    this.sweepLog?.push([+(ts - this.tImpact).toFixed(2), +s.toFixed(2)]);
+    this.pinBuf.push(m);
+    while (this.pinBuf.length && ts - this.pinBuf[0].ts > 1.5) this.pinBuf.shift();
+    // erst scharf, wenn der Streifen nach dem Einschlag kurz ruhig war (fliegende Pins kurz nach dem Treffer)
+    if (s < o.sweepArm) { if (this.sweepCalm == null) this.sweepCalm = ts; if (ts - this.sweepCalm >= o.sweepCalmDur) this.sweepArmed = true; }
+    else this.sweepCalm = null;
+    if (this.sweepArmed && s >= o.sweepThr) { if (this.sweepRun == null) this.sweepRun = ts; } else this.sweepRun = null;
+    if (this.sweepRun != null && ts - this.sweepRun >= o.sweepHold) {
+      const Ts = this.sweepRun;
+      let pick = this.pinBuf.filter(p => p.ts < Ts - 0.06 && p.ts >= Ts - 0.35);
+      if (!pick.length) pick = this.pinBuf.filter(p => p.ts < Ts).slice(-1);
+      if (pick.length) { this.pinMeas = pick; this.sweepT = Ts - this.tImpact; this._pinsReady = true; }
+      this.sweepRun = null;
+    } else if (ts >= this.tPinAt) this.pinMeas.push(m);
+  }
+
   // ---- Pin-Verlauf ----
   // Jeder Pin hat eine feste Gruppe von 3D-Messpunkten (oberer Teil + links/rechts daneben). Sie werden in jedem Bild
   // über die aktuelle Kamera abgetastet; so stört die Handbewegung nicht. Weicht das Muster deutlich vom Referenzbild ab,
@@ -666,7 +791,7 @@ export class Engine {
     const dx = X - cxp, dy = Y - cyp, dist = Math.hypot(dx, dy), px = -dy / dist, py = dx / dist;
     const v = [], pix = [];
     for (const zf of PT_Z) for (const lf of PT_L) {
-      const o = lf * 0.06, [u0, v0] = m.cam.P(X + px * o, Y + py * o, zf * PIN_H);
+      const o = lf * 0.06, [u0, v0] = this._PP(m.cam, X + px * o, Y + py * o, zf * PIN_H);
       const u = (u0 + 0.5 - r.x * w) * sx - 0.5 + ou, vv = (v0 + 0.5 - r.y * h) * sy - 0.5 + ov;
       const x0 = Math.floor(u), y0 = Math.floor(vv);
       if (x0 < 0 || y0 < 0 || x0 >= cw - 1 || y0 >= ch - 1) { v.push(NaN); pix.push(-1); continue; }
@@ -767,6 +892,72 @@ export class Engine {
     return out;
   }
 
+  // Zählung über die Pinköpfe: Der Kehrbalken verdeckt nach dem Wurf den unteren Teil, die Köpfe bleiben sichtbar.
+  // Weiße Kopf-Silhouetten im Kopfband suchen, jede genau einer Pinspalte zuordnen (verrutschte Pins inklusive).
+  // Von hinten gefilmt decken sich vorderer und hinterer Pin einer Spalte (2/8, 1/5, 3/9) vollständig – dort ist
+  // nur „Spalte steht“ messbar; welcher bzw. ob beide stehen, legt pinPair fest ('back' = einer, der hintere).
+  // Kopfzählung nur, wenn die Köpfe groß genug und ganz im Pinbild liegen
+  _headsUsable() {
+    const m = this.pinMeas[0], ids = PIN_IDS.filter(p => this.pinsBefore.includes(p));
+    if (!m || !ids.length) return false;
+    return ids.every(id => { const h = m.geo[id].head; return h.w >= this.o.pinHeadMinW && h.top >= 1 && h.bot < m.h - 1 && h.x >= 0 && h.x < m.w; });
+  }
+  _decidePinsHeads() {
+    const o = this.o, before = PIN_IDS.filter(p => this.pinsBefore.includes(p)), ref = this.pinRef;
+    const m0 = this.pinMeas[0];
+    // Spalten: Pins mit (fast) gleicher Bildlage
+    const cols = [];
+    for (const id of before.slice().sort((a, b) => m0.geo[a].head.x - m0.geo[b].head.x)) {
+      const h = m0.geo[id].head, c = cols[cols.length - 1];
+      if (c && Math.abs(h.x - c.x) < 0.5 * h.w) c.ids.push(id); else cols.push({ x: h.x, ids: [id] });
+    }
+    const thrOf = (m) => {
+      const pv = [], bv = [];
+      const inPin = new Uint8Array(m.L.length);
+      for (const id of before) for (const k of m.geo[id].meas) inPin[k] = 1;
+      for (let k = 0; k < m.L.length; k++) (inPin[k] ? pv : bv).push(m.L[k]);
+      pv.sort((a, b) => a - b); bv.sort((a, b) => a - b);
+      const Lp = pv[Math.floor(pv.length * 0.75)] ?? 255, Lb = bv[Math.floor(bv.length * 0.5)] ?? 0;
+      return Lp - Lb > 25 ? Lb + 0.5 * (Lp - Lb) : otsu(m.L);
+    };
+    const thr = ref ? thrOf(ref) : null;
+    const votes = cols.map(() => 0), detail = {};
+    for (const m of this.pinMeas) {
+      const T = thr ?? thrOf(m);
+      const hs = before.map(id => m.geo[id].head);
+      const top = Math.max(0, Math.min(...hs.map(h => h.top))), bot = Math.min(m.h - 1, Math.max(...hs.map(h => h.bot)));
+      const hw = hs.reduce((a, h) => a + h.w, 0) / hs.length;
+      // Anteil weißer Pixel je Bildspalte im Kopfband
+      const prof = new Float32Array(m.w);
+      for (let x = 0; x < m.w; x++) { let wv = 0; for (let y = top; y <= bot; y++) if (m.L[y * m.w + x] > T) wv++; prof[x] = wv / Math.max(1, bot - top + 1); }
+      const blobs = [];
+      for (let x = 0; x < m.w;) {
+        if (prof[x] < 0.45) { x++; continue; }
+        let x1 = x, sw = 0, sx = 0;
+        while (x1 < m.w && prof[x1] >= 0.45) { sw += prof[x1]; sx += prof[x1] * x1; x1++; }
+        if (x1 - x >= 0.35 * hw && x1 - x <= 2.6 * hw) blobs.push(sx / sw);
+        x = x1;
+      }
+      const colsX = cols.map(c => m.geo[c.ids[0]].head.x), sp = colsX.length > 1 ? (colsX[colsX.length - 1] - colsX[0]) / Math.max(1, (PINS[cols[cols.length - 1].ids[0]][0] - PINS[cols[0].ids[0]][0]) / 0.1524) : 2 * hw;
+      const taken = new Set();
+      for (const bx of blobs) {
+        let bi = -1, bd = 0.55 * sp;
+        colsX.forEach((cx, i) => { const d = Math.abs(bx - cx); if (d < bd && !taken.has(i)) { bd = d; bi = i; } });
+        if (bi >= 0) { taken.add(bi); votes[bi]++; }
+      }
+    }
+    const standing = [];
+    cols.forEach((c, i) => {
+      const up = votes[i] * 2 > this.pinMeas.length;
+      const ids = c.ids.slice().sort((a, b) => m0.geo[a].dist - m0.geo[b].dist);   // vorn zuerst
+      let st = [];
+      if (up) st = ids.length === 1 || o.pinPair === 'both' ? ids : o.pinPair === 'front' ? [ids[0]] : [ids[ids.length - 1]];
+      for (const id of ids) detail[id] = { state: st.includes(id) ? 'standing' : 'down', col: i, votes: votes[i], ambig: ids.length > 1 && up };
+      standing.push(...st);
+    });
+    return { standing: PIN_IDS.filter(p => standing.includes(p)), detail };
+  }
+
   _decidePins() {
     const o = this.o;
     const before = new Set(this.pinsBefore);
@@ -795,12 +986,21 @@ export class Engine {
         const g = m.geo[id];
         total = g.meas.size;
         const thr = refThr ?? thrOf(m, [...before]);
+        // angestoßene Pins können ein Stück verrutschen: seitlich bis pinSlide·Pinbreite suchen, bestes Ergebnis zählt
+        const pw = g.span.reduce((a, sp) => Math.max(a, sp[2] - sp[1] + 1), 1), K = Math.round(pw * o.pinSlide);
         let cnt = 0, white = 0;
-        for (const k of g.meas) {
-          let occ = false;
-          for (const s of standing) if (m.geo[s].dist < g.dist && m.geo[s].full.has(k)) { occ = true; break; }
-          if (occ) continue;
-          cnt++; if (m.L[k] > thr) white++;
+        for (let dx = -K; dx <= K; dx++) {
+          let c = 0, wh = 0;
+          for (const k0 of g.meas) {
+            const x = k0 % m.w + dx;
+            if (x < 0 || x >= m.w) continue;
+            const k = k0 + dx;
+            let occ = false;
+            for (const s of standing) if (m.geo[s].dist < g.dist && m.geo[s].full.has(k)) { occ = true; break; }
+            if (occ) continue;
+            c++; if (m.L[k] > thr) wh++;
+          }
+          if (dx === -K || (c && wh / c > (cnt ? white / cnt : -1))) { cnt = c; white = wh; }
         }
         vis = cnt;
         let refFrac = 1;
@@ -949,7 +1149,8 @@ export class Engine {
         this.lastPinRefT = ts;
       } else {
         if (this._wantTrack(ts)) this._trackPins(crop, ts);
-        if (this.state === 'settle' && ts >= this.tPinAt) this._measurePins(crop);
+        if (this.state === 'settle' && o.sweepGuard && this.pinRef) this._sweepStep(crop, ts);
+        else if (this.state === 'settle' && ts >= this.tPinAt) this._measurePins(crop);
       }
     }
 
