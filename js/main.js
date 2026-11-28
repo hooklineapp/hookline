@@ -8,7 +8,7 @@ import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
 import { closeSheets } from './ui.js';
 
-window.BT_VERSION = '1.26.1';
+window.BT_VERSION = '1.26.2';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac && /^[0-9a-f]{6}$/i.test(ac)) S.set('accentColor', '#' + ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));

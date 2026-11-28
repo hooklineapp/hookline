@@ -188,14 +188,14 @@ function calbar(show) {
     h('div.cal-head', null, h('b', null, t('cal.title')),
       h('span.cal-hbtns', null,
         h('button.iconbtn', { onclick: () => { calSideManual = true; setCalSide(!calTop); }, 'aria-label': t('cal.swap'), title: t('cal.swap') }, icon('swapv')),
-        h('button.iconbtn', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close')))),
+        h('button.iconbtn.cal-cancel', { onclick: cancelCalib, 'aria-label': t('btn.cancel') }, icon('close')))),
     steps, h('p.cal-msg', null, msg),
     h('div.cal-actions', null,
       h('button.pillbtn' + (pickLane ? '.on' : ''), { onclick: () => { if (pickLane) { pickLane = false; calbar(true); } else runAuto(null); } }, icon('magic'), t('cal.auto')),
       n === 4 ? h('button.pillbtn', { onclick: runSnap }, icon('corners'), t('cal.snap')) : null,
       !fileMode ? h('button.pillbtn', { onclick: lanesSheet }, icon('lanes'), t('lane.title')) : null,
       h('button.pillbtn', { onclick: () => { corners = []; pickLane = false; selCorner = -1; placeHandles(); calbar(true); requestDraw(); }, disabled: !n }, icon('reset'), t('btn.reset')),
-      h('button.pillbtn', { onclick: cancelCalib }, t('btn.cancel')),
+      h('button.pillbtn.cal-cancel', { onclick: cancelCalib }, t('btn.cancel')),
       h('button.pillbtn.primary', { disabled: n !== 4, onclick: finishCalib }, icon('check'), t('btn.apply'))));
   calPanel.style.display = 'block';
   calPanel.querySelector('.cal-head').addEventListener('pointerdown', dragPanel);
@@ -252,6 +252,7 @@ function fitCalStage() {
   placeHandles(); requestDraw();
 }
 function cancelCalib() {
+  if (autoRunning) { autoCancel = true; calPanel.classList.remove('busy'); scanHide(); }   // laufende Suche abbrechen
   // vorherige Ecken wiederherstellen, die Kalibrierung bleibt wie sie war
   if (calBackup) corners = calBackup;
   calBackup = null; pickLane = false; laneKeep = false;
@@ -287,7 +288,7 @@ function scanShow(text) {
 function scanText(text) { scan.querySelector('.autoscan-label').textContent = text; }
 function scanHide() { scan.style.display = 'none'; scan.querySelector('.autoscan-badge')?.classList.remove('on'); scanQuads = []; scanAnim = null; requestDraw(); }
 // gefundene Punkte eines geprüften Bildes: als Ziele für die Tastarme merken
-function scanKnow(viz) { if (scanAnim && viz) scanAnim.pts = [...(viz.area || []).filter((_, i) => i % 3 === 0), ...(viz.probes || []).filter(q => q[4] && q[5] != null).map(q => [q[5], q[6]])].slice(0, 400); }
+function scanKnow(viz) { if (scanAnim && viz) scanAnim.pts = [...(viz.area || []).filter((_, i) => i % 3 === 0), ...(viz.probes || []).filter(q => q[4] && q[5] != null).map(q => [q[5], q[6]])].slice(0, 400).map(p => [p[0], p[1], performance.now() + scanAnim.rnd() * 450]); }   // [x, y, Zeitpunkt des Aufglühens]
 // Ergebnis sofort zeigen; die Punkte verblassen danach selbstständig
 function showPost(viz, corners) {
   if (!viz) return;
@@ -303,17 +304,24 @@ function showPost(viz, corners) {
     setTimeout(() => { b.classList.remove('on'); setTimeout(() => { if (!scanAnim) { scan.style.display = 'none'; scan.classList.remove('post'); } }, 260); }, 1400);
   }
 }
+// Wartet höchstens ms; danach null (z. B. Videosprung ohne „seeked“ auf manchen Handys, hängende Auswertung)
+const within = (pr, ms) => Promise.race([pr, new Promise(r => setTimeout(() => r(null), ms))]);
+let autoCancel = false, autoRunning = false;
 async function runAuto(target) {
   startTilt();
   // Scanner-Anzeige bei jedem Druck auf „Auto“ (nur hier; während der Auswertung läuft nichts davon)
   vizOn = true;
+  if (autoRunning) return;
+  autoRunning = true; autoCancel = false;
   calPanel.classList.add('busy');
   if (vizOn) scanShow(t('cal.scan'));
   // Video: mehrere Bilder der ersten Sekunden prüfen (der Spieler verdeckt anfangs oft Foul-Linie und Anlauf)
-  const r = fileMode && !target && video.duration > 1 ? await autoMulti() : await autoOne(target);
-  calPanel.classList.remove('busy');
-  scanHide();
-  if (vizOn && r?.viz) showPost(r.viz, r.corners ? (r.ordered ? r.corners : orderCorners(r.corners)) : null);
+  let r = null;
+  try { r = fileMode && !target && video.duration > 1 ? await autoMulti() : await within(autoOne(target), 8000); }
+  catch (e) { console.warn('Auto:', e); }
+  finally { autoRunning = false; calPanel.classList.remove('busy'); scanHide(); }
+  if (autoCancel) return;   // „Abbrechen“ während der Suche
+  // Ergebnis da: keine Nachblende, die Anzeige ist sofort fertig
   if (!r) return;
   pickLane = false;
   if (r.t != null) { fileStart = r.t; if (freezeBmp) { unfreeze(); await doFreeze(); } }
@@ -334,15 +342,16 @@ async function autoOne(target, src) {
 async function autoMulti() {
   const t0 = video.currentTime, found = [];
   let last = -1;
-  const seek = (t) => new Promise(res => { video.onseeked = () => { video.onseeked = null; res(); }; video.currentTime = t; });
+  const seek = (t) => within(new Promise(res => { video.onseeked = () => { video.onseeked = null; res(true); }; video.currentTime = t; }), 2500);
   for (let i = 0; i < 13; i++) {
+    if (autoCancel) break;
     const tt = Math.min(t0 + i * 0.5, video.duration - 0.1);
     if (tt <= last) break;
     last = tt;
     if (i || Math.abs(video.currentTime - tt) > 0.01) await seek(tt);
     const bmp = await grabFrame();
     if (vizOn) scanText(t('cal.scanN', { i: i + 1, n: 13 }));
-    const r = bmp && await proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')), viz: vizOn } });
+    const r = bmp && await within(proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')), viz: vizOn } }), 6000);
     if (vizOn && r?.viz) scanKnow(r.viz);
     if (r?.corners) { found.push({ t: tt, r, c: r.ordered ? r.corners : orderCorners(r.corners) }); if (vizOn) { scanQuads.push(found[found.length - 1].c); requestDraw(); } }
     if (tt >= video.duration - 0.1) break;
@@ -803,6 +812,7 @@ function endMode() {
 }
 
 function onPointerDown(e) {
+  if (autoRunning) return;   // während „Auto“ keine Ecken verschieben
   if (mode === 'wizard') {
     const n = toNorm(e.clientX, e.clientY);
     if (n[0] < 0 || n[0] > 1 || n[1] < 0 || n[1] > 1) return;
@@ -1138,7 +1148,15 @@ function drawScanWait(c, S2, R) {
     if (docked) { c.strokeStyle = `rgba(${CY},${0.7 * (1 - dk)})`; c.lineWidth = 1; c.beginPath(); c.arc(P2[0], P2[1], 4 + dk * 9, 0, 7); c.stroke(); }
   }
   // bereits gefundene Punkte (Videos) dezent zeigen, damit man sieht, woran die Arme tasten
-  for (const p of A.pts) { const q = S2(p[0], p[1]); c.fillStyle = `rgba(${CY},0.28)`; c.beginPath(); c.arc(q[0], q[1], 1, 0, 7); c.fill(); }
+  // gefundene Punkte (Videos) tauchen als kleine Glühpunkte auf: kurz hell, dann ruhig weiterglimmend
+  c.shadowColor = `rgb(${CY})`;
+  for (const p of A.pts) {
+    const el = now - p[2]; if (el < 0) continue;
+    const f = Math.min(1, el / 250), flash = el < 600 ? 1 - el / 600 : 0, q = S2(p[0], p[1]);
+    c.shadowBlur = 4 + 6 * flash; c.fillStyle = `rgba(${flash > 0 ? '230,254,255' : CY},${f * (0.35 + 0.5 * flash)})`;
+    c.beginPath(); c.arc(q[0], q[1], 1 + 0.8 * flash, 0, 7); c.fill();
+  }
+  c.shadowBlur = 0;
   c.restore();
 }
 function drawScanPost(c, S2) {

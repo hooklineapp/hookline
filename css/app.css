@@ -95,7 +95,7 @@ button.icon { padding: 6px 10px; font-size: 18px; }
 
 .calpanel { position: absolute; left: 50%; bottom: calc(12px + var(--safe-b)); transform: translateX(-50%); width: min(560px, calc(100% - 24px)); z-index: 4; padding: 14px 14px 12px;
   background: var(--panel); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); border-radius: 24px; box-shadow: var(--sh-lg); animation: rise .2s ease-out; }
-.calpanel.busy { opacity: .7; pointer-events: none; }
+.calpanel.busy .cal-actions button:not(.cal-cancel), .calpanel.busy .pillbtn:not(.cal-cancel) { opacity: .55; pointer-events: none; }   /* Suche läuft: nur Abbrechen bleibt bedienbar */
 .calpanel.top { bottom: auto; top: calc(10px + var(--safe-t)); }
 .cal-top .topbar { opacity: 0; pointer-events: none; }
 .cal-hbtns { display: inline-flex; gap: 6px; }
