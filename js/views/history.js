@@ -43,11 +43,12 @@ async function renderSessions() {
   for (const s of sessions) {
     const shots = await db.shotsOf(s.id);
     if (!shots.length && s.id !== state.session?.id) continue;
-    const games = [...new Set(shots.map(x => x.game || 1))];
-    const scores = games.map(g => buildGame(shots.filter(x => (x.game || 1) === g))).filter(g => g.complete).map(g => g.total);
+    const gshots = shots.filter(x => !x.single);
+    const games = [...new Set(gshots.map(x => x.game || 1))];
+    const scores = games.map(g => buildGame(gshots.filter(x => (x.game || 1) === g))).filter(g => g.complete).map(g => g.total);
     list.append(h('div.item', { onclick: () => go({ v: 'session', id: s.id }) },
       h('div.grow', null, h('b', null, dateStr(s.date)), h('br'),
-        h('small', null, (bowlers[s.bowlerId]?.name || '?') + ' · ' + t(shots.length === 1 ? 'h.shots1' : 'h.shots', { n: shots.length }) + ' · ' + t(games.length === 1 ? 'h.games1' : 'h.games', { n: games.length }) +
+        h('small', null, (bowlers[s.bowlerId]?.name || '?') + ' · ' + t(shots.length === 1 ? 'h.shots1' : 'h.shots', { n: shots.length }) + (games.length ? ' · ' + t(games.length === 1 ? 'h.games1' : 'h.games', { n: games.length }) : '') +
           (scores.length ? ' · Ø ' + fmt(scores.reduce((a, b) => a + b, 0) / scores.length, 0) : ''))),
       s.id === state.session?.id ? h('span.chip.ok', null, t('h.active')) : null, '›'));
   }
@@ -61,23 +62,38 @@ async function renderSession(id) {
   root.append(h('button.back', { onclick: back }, '‹ ' + t('h.sessions')), h('h2', null, dateStr(s.date)));
   const delBtn = h('div.row', { style: { justifyContent: 'center', marginTop: '22px' } },
     h('button.skip', { onclick: async () => { if (await confirmBox(t('h.deleteSession'))) { await db.deleteSession(id); if (state.session?.id === id) { state.session = null; state.shots = []; } back(); } } }, t('h.deleteSession').replace('?', '')));
-  const games = [...new Set(shots.map(x => x.game || 1))].sort((a, b) => a - b);
+  // Zeile für einen Wurf (Einzelwürfe und Spiele)
+  const shotRow = (sh, label, indent) => {
+    const an = sh.an || analyze(sh);
+    const cv = h('canvas', { style: { width: '26px', height: '70px', borderRadius: '4px' } });
+    const row = h('div.item' + (indent ? '.pair' : ''), { onclick: () => go({ v: 'shot', id: sh.id, sid: id }) }, cv,
+      h('div.grow', null, h('b', null, label), h('br'),
+        h('small', null, an ? `${speedStr(an.speedAvg)} · ${fmt(an.entryAngle, 1)}° · ${t('m.entryBoard')} ${fmt(an.entryBoard, 1)}` : t('misc.noData'))),
+      sh.pinsAfter ? pinMini(sh.pinsBefore, sh.pinsAfter) : h('span.chip', { title: t('m.pins') + ': ?' }, '?'), sh.pinsManual ? h('span.chip', null, '✎') : null);   // ? = Pins nicht gemessen
+    requestAnimationFrame(() => miniLane(cv, an, { exag: 6, pinsBefore: sh.pinsBefore, pinsAfter: sh.pinsAfter }));
+    return row;
+  };
+  const singles = shots.filter(x => x.single).sort((a, b) => a.t - b.t);
+  if (singles.length) {
+    root.append(h('h3', null, t('single.list')));
+    const list = h('div.list', { style: { marginTop: '8px' } });
+    const timeOf = (x) => new Date(x.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    for (const sh of singles) {
+      const second = sh.ball === 2;
+      const label = (second ? '↳ ' + t('single.pair') : timeOf(sh)) + (sh.pinsBefore.length < 10 ? ' · ' + t('single.on', { p: sh.pinsBefore.join(', ') }) : '');
+      list.append(shotRow(sh, label, second));
+    }
+    root.append(list);
+  }
+  const gshots = shots.filter(x => !x.single);
+  const games = [...new Set(gshots.map(x => x.game || 1))].sort((a, b) => a - b);
   for (const g of games) {
-    const gs = shots.filter(x => (x.game || 1) === g);
+    const gs = gshots.filter(x => (x.game || 1) === g);
     const st = gameStats(gs);
     root.append(h('div.row', { style: { alignItems: 'center' } }, h('h3', null, t('h.game', { n: g }) + (st.complete ? ' · ' + st.total : '')), h('span.spacer'),
       h('button.skip', { onclick: async () => { if (await confirmBox(t('h.deleteGame', { n: g }))) { await deleteGame(id, g); render(); } } }, t('h.deleteGameBtn'))), scoreCard(st));
     const list = h('div.list', { style: { marginTop: '8px' } });
-    for (const sh of gs) {
-      const an = sh.an || analyze(sh);
-      const cv = h('canvas', { style: { width: '26px', height: '70px', borderRadius: '4px' } });
-      list.append(h('div.item', { onclick: () => go({ v: 'shot', id: sh.id, sid: id }) }, cv,
-        h('div.grow', null,
-          h('b', null, t('h.frame', { f: sh.frame }) + ' · ' + t('h.ball', { b: sh.ball })), h('br'),
-          h('small', null, an ? `${speedStr(an.speedAvg)} · ${fmt(an.entryAngle, 1)}° · ${t('m.entryBoard')} ${fmt(an.entryBoard, 1)}` : t('misc.noData'))),
-        pinMini(sh.pinsBefore, sh.pinsAfter), sh.pinsManual ? h('span.chip', null, '✎') : null));
-      requestAnimationFrame(() => miniLane(cv, an, { exag: 6, pinsBefore: sh.pinsBefore, pinsAfter: sh.pinsAfter }));
-    }
+    for (const sh of gs) list.append(shotRow(sh, t('h.frame', { f: sh.frame }) + ' · ' + t('h.ball', { b: sh.ball })));
     root.append(list);
   }
   if (!shots.length) root.append(h('p.muted', null, t('h.empty')));
@@ -93,10 +109,10 @@ async function renderShot(id, sid) {
   const idx = all.findIndex(s => s.id === id);
   const n = +S.get('compareN');
   const cmp = all.slice(Math.max(0, idx - n), idx).map(s => s.an || analyze(s, bowler));
-  root.append(h('div.row', null, h('button.back', { onclick: back }, '‹ ' + t('h.game', { n: shot.game })), h('span.spacer'),
+  root.append(h('div.row', null, h('button.back', { onclick: back }, '‹ ' + (shot.single ? t('h.sessions') : t('h.game', { n: shot.game }))), h('span.spacer'),
     idx > 0 ? h('button', { onclick: () => { stack[stack.length - 1] = { v: 'shot', id: all[idx - 1].id, sid }; render(); } }, '‹') : null,
     idx < all.length - 1 ? h('button', { onclick: () => { stack[stack.length - 1] = { v: 'shot', id: all[idx + 1].id, sid }; render(); } }, '›') : null));
-  root.append(h('h2', null, `${t('h.frame', { f: shot.frame })} · ${t('h.ball', { b: shot.ball })}`, an?.extrap?.start || an?.extrap?.end ? h('span.chip.warn', { style: { marginLeft: '8px' } }, t('m.extrap')) : null));
+  root.append(h('h2', null, shot.single ? (shot.ball === 2 ? t('single.pair') : t('single.label')) + (shot.pinsBefore.length < 10 ? ' · ' + t('single.on', { p: shot.pinsBefore.join(', ') }) : '') : `${t('h.frame', { f: shot.frame })} · ${t('h.ball', { b: shot.ball })}`, an?.extrap?.start || an?.extrap?.end ? h('span.chip.warn', { style: { marginLeft: '8px' } }, t('m.extrap')) : null));
   // Replay
   let modeSel = S.get('replayMode');
   const box = h('div.replay');

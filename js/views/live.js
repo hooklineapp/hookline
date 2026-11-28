@@ -6,7 +6,7 @@ import { startCamera, stopStream } from '../camera.js';
 import { Processor, estimateFps } from '../processor.js';
 import { apply, cameraFromH } from '../vision/geometry.js';
 import { LANE_W, HEADPIN_Y, PIT_Y, BOARD_W, PINS, PIN_IDS, ARROWS, xOfBoard, topLineY } from '../lane.js';
-import { state, addShot, currentPosition, newGame, onStore, updateShot, gameShots, deleteShot } from '../store.js';
+import { state, addShot, currentPosition, newGame, onStore, updateShot, gameShots, deleteShot, singleMode } from '../store.js';
 import { buildGame } from '../scoring.js';
 import { miniLane } from '../replay.js';
 import { pinPadSheet, speedStr, scoreCard, pinMini } from './common.js';
@@ -52,7 +52,11 @@ export function initLive(el) {
     dbtn('b-cal', 'corners', t('btn.setup'), () => startCalib()),
     dbtn('b-ball', 'ball', t('btn.ball'), () => mode === 'ball' ? endMode() : startBall()),
     h('button.fab', { id: 'b-run', onclick: togglePause, 'aria-label': t('btn.pause') }, icon('pause')),
-    dbtn('b-game', 'plus', t('btn.newGame'), async () => { await newGame(); syncPins(); updateTop(); toast(t('btn.newGame')); }),
+    dbtn('b-game', 'plus', t('btn.newGame'), async () => {
+      // Einzelwürfe: nächster Wurf wieder aufs volle Dreieck (nicht an den letzten anhängen)
+      if (singleMode()) { state.rackOverride = [...PIN_IDS]; syncPins(); updateTop(); toast(t('single.fresh2')); return; }
+      await newGame(); syncPins(); updateTop(); toast(t('btn.newGame'));
+    }),
     dbtn('b-more', 'more', t('btn.more'), moreMenu));
   calPanel = h('div.calpanel', { style: { display: 'none' } });
   shotCard = h('div.shotcard', { style: { display: 'none' }, onclick: () => lastShot && openShot(lastShot) });
@@ -62,6 +66,7 @@ export function initLive(el) {
   window.addEventListener('resize', () => { requestDraw(); placeHandles(); });
   onStore(() => updateTop());
   S.onChange((k) => {
+    if (k === 'scoreMode' || k === '*') { state.rackOverride = null; updateTop(); syncPins(); }   // Wertung umgeschaltet
     if (!proc) return;
     if (k === '*' || S.isEngineKey(k) || k === 'workW') proc.setOptions(S.engineOptions(), +S.get('workW'));
     if (['camRes', 'camFps', 'camPrefer', 'camDevice', 'camZoom', 'camShortExposure', 'camFocusFar', 'useWorker'].includes(k) && active && !fileMode) restart();
@@ -828,6 +833,8 @@ function onResult(m) {
   requestDraw();
 }
 async function handleEvent(ev) {
+  // Wurfbeginn: Pins direkt vor dem Wurf (letztes ruhiges Bild) mit dem erwarteten Stand vergleichen
+  if (ev.type === 'start' && ev.rack && singleMode()) checkStartPins(ev.rack, true);
   if (ev.type === 'start') { if (performance.now() > quietUntil && last?.ok !== false && mode === 'live') { buzz(20); beep(660); } }
   else if (ev.type === 'abort') { toast(t('shot.abort')); }
   else if (ev.type === 'shot') {
@@ -891,10 +898,12 @@ function setStatus(key, cls) {
 }
 function updateTop() {
   if (!framePill) return;
+  const gb = document.querySelector('#b-game span'); if (gb) gb.textContent = singleMode() ? t('single.newBtn') : t('btn.newGame');
   const pos = currentPosition();
   const g = buildGame(gameShots());
   framePill.innerHTML = '';
-  framePill.append(h('small', null, t('h.game', { n: state.game })), h('b', null, t('h.frameShort', { f: pos.frame, b: pos.ball })), g.total ? h('span.score-badge', null, g.total) : '');
+  if (pos.single) framePill.append(h('small', null, t('single.label')), h('b', null, pos.ball === 2 ? t('single.second', { n: pos.pinsBefore.length }) : pos.pinsBefore.length < 10 ? t('single.restShort', { n: pos.pinsBefore.length }) : t('single.full')));
+  else framePill.append(h('small', null, t('h.game', { n: state.game })), h('b', null, t('h.frameShort', { f: pos.frame, b: pos.ball })), g.total ? h('span.score-badge', null, g.total) : '');
   bowlerPill.innerHTML = '';
   const bc = state.bowler?.ballColor?.rgb;
   const name = state.bowler?.name || '?';
@@ -903,6 +912,7 @@ function updateTop() {
   bowlerPill.title = name;
 }
 function showGame() {
+  if (singleMode()) { document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'history' })); return; }   // Einzelwürfe: kein Punktezettel, zur Liste
   const g = buildGame(gameShots());
   import('../ui.js').then(({ sheet }) => sheet(t('h.game', { n: state.game }), scoreCard(g, currentPosition().frame)));
 }
@@ -928,7 +938,7 @@ async function moreMenu() {
     ...(fileMode ? [item('closefile', 'close', t('file.close'))] : []),
     ...(fileMode ? [] : [item('lanes', 'lanes', t('lane.title'), activeLane()?.name || t('lane.sub', { n: lanes().length }))]),
     item('file', 'video', t('btn.file'), t('file.short')),
-    item('game', 'pins', t('h.scorecard')),
+    ...(singleMode() ? [] : [item('game', 'pins', t('h.scorecard'))]),
     item('fs', 'expand', t('btn.fullscreen')),
   ] });
   if (v === 'closefile') closeFile(); else if (v === 'lanes') lanesSheet(); else if (v === 'file') pickFile(); else if (v === 'fs') toggleFullscreen(); else if (v === 'game') showGame();
@@ -949,7 +959,7 @@ let camCorners = null, fileShots = 0, fileShotList = [], fileEarly = false, savi
 // Neues Video, Live-Start oder nach Pause: Stehen andere Pins, als das laufende Spiel erwartet (z. B. volles Dreieck, obwohl der
 // 2. Wurf dran wäre), ist es ein Neustart -> neues Spiel. Von hinten verdecken sich Pins paarweise; verglichen
 // wird deshalb je Bildspalte, und eine einzelne abweichende Spalte reicht nicht (Messfehler).
-async function checkStartPins(sp) {
+async function checkStartPins(sp, quiet = false) {
   if (!sp?.cols?.length) return;
   const pos = currentPosition(), exp = pos.pinsBefore || [];
   const det = sp.cols.map(c => c.up), want = sp.cols.map(c => c.ids.some(id => exp.includes(id)));
@@ -958,7 +968,15 @@ async function checkStartPins(sp) {
   // Spalten oder deutlich anderer Anzahl ein Neustart
   const nDet = det.filter(Boolean).length, nWant = want.filter(Boolean).length;
   const mismatch = (full && !expFull) || (!full && expFull && det.filter(v => !v).length >= 2) || (!full && !expFull && (diff >= 3 || Math.abs(nDet - nWant) >= 2));
-  if (!mismatch || (gameShots().length === 0 && full)) return;
+  if (!mismatch) return;
+  if (singleMode()) {
+    // Einzelwürfe: kein neues Spiel, nur der nächste Wurf geht auf die tatsächlich stehenden Pins
+    state.rackOverride = full ? [...PIN_IDS] : [...sp.standing];
+    syncPins(); updateTop();
+    if (!quiet) toast(full ? t('single.fresh') : t('single.rest', { p: sp.standing.join(', ') }));
+    return;
+  }
+  if (gameShots().length === 0 && full) return;
   await newGame();
   if (full) syncPins(); else proc?.post({ type: 'pinsBefore', pins: sp.standing });
   updateTop(); toast(t('file.newStart'));

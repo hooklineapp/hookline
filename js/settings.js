@@ -19,6 +19,7 @@ export const SCHEMA = [
   S('wakeLock', 'bool', true, { group: 'general' , basic: true }),
   S('autoSave', 'bool', true, { group: 'general' , basic: true }),
   S('confirmShots', 'bool', false, { group: 'general' , basic: true }),
+  S('scoreMode', 'select', 'single', { group: 'general', options: ['single', 'game'], basic: true }),   // Einzelne Würfe (Standard) oder ganze Spiele
   S('fileOneShot', 'bool', true, { group: 'general', basic: true }),
   S('fileRealtime', 'bool', true, { group: 'general', basic: true }),   // Videodatei wie Live-Kamera (Echtzeit, Bilder überspringen)
   // Kamera

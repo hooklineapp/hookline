@@ -48,7 +48,8 @@ export async function deleteBowler(id) {
 async function setSession(s) {
   state.session = s;
   state.shots = s ? await db.shotsOf(s.id) : [];
-  state.game = state.shots.length ? Math.max(...state.shots.map(x => x.game || 1)) : 1;
+  const gs = state.shots.filter(x => !x.single);
+  state.game = gs.length ? Math.max(...gs.map(x => x.game || 1)) : 1;
   const g = gameShots();
   if (g.length && buildGame(g).complete) state.game++;
 }
@@ -63,8 +64,21 @@ export async function newGame() {
   if (gameShots().length) state.game++;
   emit('game');
 }
-export const gameShots = (g = state.game) => state.shots.filter(s => (s.game || 1) === g);
-export function currentPosition() { return nextPosition(gameShots()); }
+export const gameShots = (g = state.game) => state.shots.filter(s => !s.single && (s.game || 1) === g);
+export const singleMode = () => S.get('scoreMode') !== 'game';
+// Einzelwürfe: jeder Wurf steht für sich. Bleiben nach einem 1. Wurf Pins stehen, kann der nächste Wurf der
+// 2. Wurf darauf sein (Spare-Versuch) und wird angehängt – außer die Pins vor dem Wurf zeigen etwas anderes
+// (state.rackOverride, gesetzt direkt beim Wurfbeginn aus dem Kamerabild).
+export function singlePosition() {
+  const singles = state.shots.filter(s => s.single).sort((a, b) => a.t - b.t);
+  const last = singles[singles.length - 1];
+  const n1 = singles.filter(s => s.ball === 1).length;
+  if (state.rackOverride) return { newGame: false, single: true, frame: n1 + 1, ball: 1, pinsBefore: [...state.rackOverride] };
+  if (last && last.ball === 1 && last.pinsAfter?.length && Date.now() - last.t < 15 * 60e3)
+    return { newGame: false, single: true, frame: last.frame, ball: 2, pinsBefore: [...last.pinsAfter], pairOf: last.id };
+  return { newGame: false, single: true, frame: n1 + 1, ball: 1, pinsBefore: [...PIN_IDS] };
+}
+export function currentPosition() { return singleMode() ? singlePosition() : nextPosition(gameShots()); }
 
 export function analyze(shot, bowler = state.bowler) {
   return analyzeShot(shot.points || [], {
@@ -78,9 +92,11 @@ export async function addShot(es, extra = {}) {
   if (!state.session) await newSession();
   let pos = currentPosition();
   if (pos.newGame) { state.game++; pos = currentPosition(); }
+  state.rackOverride = null;
   const shot = {
     id: db.uid(), sessionId: state.session.id, bowlerId: state.bowler.id, hand: state.bowler.hand,
-    t: Date.now(), game: state.game, frame: pos.frame, ball: pos.ball,
+    t: Date.now(), game: pos.single ? null : state.game, frame: pos.frame, ball: pos.ball,
+    ...(pos.single ? { single: true, pairOf: pos.pairOf || null } : {}),
     pinsBefore: pos.pinsBefore, pinsAfter: es.pinsAfter ? es.pinsAfter.filter(p => pos.pinsBefore.includes(p)) : null,
     pinDetail: es.pinDetail || null, pinsManual: false, pinTrack: es.pinTrack || null,
     points: es.points || [], itrack: es.itrack || [], tStart: es.tStart, tImpact: es.tImpact, cam: es.cam || null,
@@ -98,7 +114,7 @@ export async function updateShot(shot) {
   const i = state.shots.findIndex(s => s.id === shot.id);
   if (i >= 0) state.shots[i] = shot;
   // Folgewürfe im Spiel: pinsBefore neu ableiten
-  if (shot.sessionId === state.session?.id) await relinkGame(shot.game);
+  if (shot.sessionId === state.session?.id && !shot.single) await relinkGame(shot.game);
   emit('shot');
 }
 async function relinkGame(g) {
@@ -118,13 +134,14 @@ async function relinkGame(g) {
 export async function deleteShot(shot) {
   await db.del('shots', shot.id);
   state.shots = state.shots.filter(s => s.id !== shot.id);
-  if (shot.sessionId === state.session?.id) await relinkGame(shot.game);
+  if (shot.sessionId === state.session?.id && !shot.single) await relinkGame(shot.game);
   emit('shot');
 }
 // Ein ganzes Spiel einer Session löschen; spätere Spiele rücken nach (Spiel 3 wird Spiel 2 usw.)
 export async function deleteGame(sessionId, game) {
   const all = await db.shotsOf(sessionId);
   for (const s of all) {
+    if (s.single) continue;
     const g = s.game || 1;
     if (g === game) await db.del('shots', s.id);
     else if (g > game) { s.game = g - 1; await db.put('shots', s); }

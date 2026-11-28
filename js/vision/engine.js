@@ -550,8 +550,10 @@ export class Engine {
     this.itrack = seed.map(p => [p[0], (p[3] + 0.5) / this.ref.w, (p[4] + 0.5) / this.ref.h]);
     this.tStart = seed[0][0]; this.lastSeen = ts; this.alt = []; this.seedM = [];
     const ln = seed.filter(p => p[5]).pop(); this.lastNetT = ln ? ln[0] : -1e9;
+    // stehende Pins direkt vor dem Wurf (letztes ruhiges Pin-Bild) mitmelden – Einzelwürfe prüfen damit den Stand
+    const rack = !restart && this.o.startPins ? this.standingNow() : null;
     if (!restart) { this.pinRef = this.pinRefCand; this._alignPins(this.pinRef); }
-    ev.push({ type: restart ? 'restart' : 'start', t: this.tStart });
+    ev.push({ type: restart ? 'restart' : 'start', t: this.tStart, ...(rack ? { rack } : {}) });
   }
 
   _stateStep(cands, ts, ev) {

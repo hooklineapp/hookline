@@ -23,7 +23,8 @@ export async function showStats() {
   for (const s of sel) {
     const ss = await db.shotsOf(s.id);
     shots = shots.concat(ss);
-    for (const g of [...new Set(ss.map(x => x.game || 1))]) games.push(gameStats(ss.filter(x => (x.game || 1) === g)));
+    const gs = ss.filter(x => !x.single);
+    for (const g of [...new Set(gs.map(x => x.game || 1))]) games.push(gameStats(gs.filter(x => (x.game || 1) === g)));
   }
   shots.sort((a, b) => a.t - b.t);
   const bow = bowlers.find(b => b.id === bowlerId);
@@ -39,8 +40,11 @@ export async function showStats() {
   const done = games.filter(g => g.complete);
   const sum = (a, f) => a.reduce((x, y) => x + f(y), 0);
   const avg = (a, f) => { const v = a.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : NaN; };
-  const strikes = sum(games, g => g.strikes), sc = sum(games, g => g.strikeChances);
-  const spares = sum(games, g => g.spares), spc = sum(games, g => g.spareChances);
+  // Einzelwürfe zählen mit: Strike = 1. Wurf aufs volle Dreieck räumt ab; Spare = 2. Wurf räumt den Rest ab
+  const sg = shots.filter(x => x.single && x.pinsAfter);
+  const s1 = sg.filter(x => x.ball === 1 && x.pinsBefore.length === 10), s2 = sg.filter(x => x.ball === 2);
+  const strikes = sum(games, g => g.strikes) + s1.filter(x => !x.pinsAfter.length).length, sc = sum(games, g => g.strikeChances) + s1.length;
+  const spares = sum(games, g => g.spares) + s2.filter(x => !x.pinsAfter.length).length, spc = sum(games, g => g.spareChances) + s2.length;
   const first = shots.filter(s => s.ball === 1 && s.pinsAfter && s.pinsBefore.length === 10);
   const unit = S.get('units') === 'mph' ? 'mph' : 'km/h';
   const tile = (l, v) => h('div.tile', null, h('small', null, l), h('b', null, v));

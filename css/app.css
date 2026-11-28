@@ -642,3 +642,6 @@ button.step { background: none !important; border: 0 !important; box-shadow: non
 /* Replay: Vergleichslinien ein/aus */
 .view button.cmptoggle { min-height: 36px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 650; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); }
 .view button.cmptoggle.on { background: var(--acc); border-color: transparent; color: #fff; }
+
+/* Einzelwürfe: angehängter 2. Wurf eingerückt */
+.list .item.pair { margin-left: 22px; }
