@@ -15,6 +15,7 @@ import { mascot, setMood, mascotOn } from '../mascot.js';
 import { recommend, applyChanges } from '../autotune.js';
 import { lanes, activeLane, setActiveLane, saveLane, touchLane, deleteLane } from '../lanes.js';
 import { relocate, grayOf, RW } from '../vision/relocate.js';
+import { startTilt, horizonDeg } from '../tilt.js';
 
 const CAL_KEY = 'bt.calib.v1';
 let root, stage, video, ov, octx, freeze, fctx, loupe, lctx, debugCv, hint, statusPill, framePill, bowlerPill, hud, shotCard, progress;
@@ -141,7 +142,9 @@ async function grabFrame() {
   if (video.readyState < 2) return null;
   return createImageBitmap(video);
 }
+let freezeHorizon = null;   // Horizont-Neigung (Lagesensor) zum Zeitpunkt des Einfrierens
 async function doFreeze() {
+  freezeHorizon = fileMode ? null : horizonDeg();
   freezeBmp = await grabFrame();
   if (!freezeBmp) return false;
   freeze.width = freezeBmp.width; freeze.height = freezeBmp.height;
@@ -257,7 +260,10 @@ async function runSnap() {
   else toast(t('cal.snapFail'), 'bad');
   placeHandles(); calbar(true); requestDraw();
 }
+// Lagesensor beim ersten Antippen einschalten (iOS fragt dafür einmal nach der Erlaubnis)
+if (typeof document !== 'undefined') document.addEventListener('pointerdown', () => { startTilt(); }, { once: true, capture: true });
 async function runAuto(target) {
+  startTilt();
   calPanel.classList.add('busy');
   // Video: mehrere Bilder der ersten Sekunden prüfen (der Spieler verdeckt anfangs oft Foul-Linie und Anlauf)
   const r = fileMode && !target && video.duration > 1 ? await autoMulti() : await autoOne(target);
@@ -273,7 +279,9 @@ async function runAuto(target) {
 async function autoOne(target, src) {
   src = src || (freezeBmp ? await createImageBitmap(freezeBmp) : await grabFrame());
   if (!src) return null;
-  return proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')) } });
+  // Live-Kamera: Neigung des Horizonts (Lagesensor) mitgeben, damit die obere Linie zur Foul-Linie passt
+  const horizon = fileMode ? null : (freezeBmp ? freezeHorizon : horizonDeg());
+  return proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')), horizon } });
 }
 // Bahn auf bis zu 13 Bildern (0–6 s) suchen; es gewinnt die Gruppe gleicher Ergebnisse auf den meisten Bildern,
 // daraus je Ecke der Median: eine Ecke, die nur auf manchen Bildern auf den Spieler rutscht, fällt heraus

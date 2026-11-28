@@ -4,7 +4,7 @@ import { autoLane } from './autolane.js';
 import { snapCorners, snapNormalized } from './snap.js';
 import { toGray } from './lk.js';
 import { loadLaneNet, runLaneNet } from './lanenet.js';
-import { laneEvidence } from './lanegeo.js';
+import { laneEvidence, topFromHorizon } from './lanegeo.js';
 import { homography, apply } from './geometry.js';
 
 // Gegencheck: konvexes Viereck, Foul-Linie vorn (unten), Bahn hinten schmaler als vorn, nicht winzig
@@ -85,6 +85,17 @@ export async function findCorners(frame, a) {
   // Modell unsicher und kein Tipp: nicht blind raten (alte Kantensuche ohne Tipp lag oft daneben) -> Bahn antippen lassen
   const fallback = ml && !ml.corners && !a.target ? { error: 'pick' } : null;
   const res = { type: 'auto', ...(ml?.corners ? ml : fallback || autoCorners(frame, a)) };
+  // Live-Kamera mit Lagesensor: obere Linie am Horizont ausrichten (parallel zur Foul-Linie in Wirklichkeit).
+  // Nur übernehmen, wenn das Viereck plausibel bleibt und sich die oberen Ecken nicht unplausibel weit bewegen.
+  if (res.corners && typeof a.horizon === 'number' && isFinite(a.horizon)) {
+    const { width: w, height: h } = frame, c0 = ml?.corners ? res.corners : null;   // nur Modell-Ecken (feste Reihenfolge)
+    const t = c0 && topFromHorizon(c0, w, h, a.horizon);
+    if (t && plausible(t, w, h)) {
+      const topW = Math.hypot((c0[3][0] - c0[2][0]) * w, (c0[3][1] - c0[2][1]) * h);
+      const mv = Math.max(...[2, 3].map(i => Math.hypot((t[i][0] - c0[i][0]) * w, (t[i][1] - c0[i][1]) * h)));
+      if (mv <= Math.max(4, 0.8 * topW)) { res.corners = t; res.horizon = +mv.toFixed(1); }
+    }
+  }
   if (ml && !ml.corners) res.mlFail = true;
   else if (ml?.corners) res.ordered = true;   // Modell liefert FoulL, FoulR, KopfL, KopfR schon richtig
   return res;
