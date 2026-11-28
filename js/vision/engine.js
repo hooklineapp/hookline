@@ -30,6 +30,8 @@ export const ENGINE_DEFAULTS = {
   colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,
   motionFallback: false, motionSeedSize: 0.8, motionSeedExtra: 4,   // Wurfstart über Bewegung, wenn die Kugelfarbe nicht passt   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
   cooldown: 3.0, debug: false, ballHitCheck: true,
+  // Kugel-Netz (balldet.js): Erkennungen als zusätzliche Kandidaten; netOnly = nur diese (ohne Hintergrundmodell)
+  net: false, netOnly: false, netConf: 0.3, netStartMin: -0.3, maxVx: 1.2, netHold: 0.4, netZoom: true, netZoomFrom: 5, netZoomHold: 0.3, netZoomMax: 3, netSize: 0.3, netSizeLo: 0.4, netSizeHi: 2.5,
 };
 
 const pinR = [[0, 0.0285], [0.03, 0.04], [0.0635, 0.0475], [0.114, 0.0605], [0.165, 0.0575],
@@ -406,6 +408,53 @@ export class Engine {
     return blobs;
   }
 
+  // Bildausschnitt (Pixel des Arbeitsbilds) für das Kugel-Netz: Bahn samt Rinnen, etwas hinter der Foul-Linie bis zu den Pins
+  // Im Lauf (ts = Bildzeit in s): nur ein Ausschnitt um die vorhergesagte Kugelposition, vergrößert -> weit hinten
+  // ist die Kugel für das Netz 2-3-mal größer. Findet es sie dort eine Weile nicht, wieder die ganze Bahn.
+  netRect(ts) {
+    if (!this.cam || !this.ref) return null;
+    const { w, h } = this.ref, P = this.cam.P, o = this.o;
+    const box = (Xs, Ys, Zs) => {
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const X of Xs) for (const Y of Ys) for (const Z of Zs) {
+        const p = P(X, Y, Z); if (!(p[2] > 0)) continue;
+        x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]);
+      }
+      return [x0, y0, x1, y1];
+    };
+    let [x0, y0, x1, y1] = box([-GUTTER_W - 0.3, LANE_W + GUTTER_W + 0.3], [-1.5, PIT_Y], [0, 0.5]);
+    if (o.netZoom && ts != null && this.state === 'roll' && this.track.length >= 3) {
+      const v = this._fitVel(this.track), l = this.track[this.track.length - 1];
+      if (v && v.vy > 1 && ts - this.lastNetT < o.netZoomHold) {
+        const py = v.ay + v.vy * (ts - v.t0), px = l[1] + Math.max(-o.maxVx, Math.min(o.maxVx, v.vx)) * (ts - l[0]);
+        if (py > o.netZoomFrom) {
+          let [a0, b0, a1, b1] = box([px - 0.9, px + 0.9], [py - 2.5, Math.min(PIT_Y, py + 3.5)], [0, 0.3]);
+          // Seitenverhältnis des Netzes, Mindestgröße (höchstens netZoomMax-fach vergrößern)
+          const ar = 448 / 288, minW = 448 / o.netZoomMax;
+          let cw = Math.max(a1 - a0, minW, (b1 - b0) * ar), ch = cw / ar;
+          const cx = (a0 + a1) / 2, cy = (b0 + b1) / 2;
+          a0 = cx - cw / 2; a1 = cx + cw / 2; b0 = cy - ch / 2; b1 = cy + ch / 2;
+          if (a1 - a0 < x1 - x0) { x0 = a0; x1 = a1; y0 = b0; y1 = b1; }
+        }
+      }
+    }
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w, Math.ceil(x1)); y1 = Math.min(h, Math.ceil(y1));
+    return x1 - x0 >= 16 && y1 - y0 >= 16 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  }
+  // Netz-Erkennungen (Bildpixel, Mittelpunkt + Größe) -> Kandidaten wie aus _candidates
+  _netCands(dets) {
+    const o = this.o, cam = this.cam, HR = inv(cam.planeH(BALL_R)), out = [];
+    for (const d of dets) {
+      if (d.conf < o.netConf) continue;
+      const u = d.x - 0.5, v = d.y - 0.5, [X, Y] = apply(HR, u, v);
+      if (!isFinite(X) || Y < -0.2 || Y > PIT_Y || X < -GUTTER_W - 0.2 || X > LANE_W + GUTTER_W + 0.2) continue;
+      const rImg = BALL_R * cam.f / cam.P(X, Y, BALL_R)[2], q = Math.max(d.w, d.h) / (2 * rImg);
+      if (q < o.netSizeLo || q > o.netSizeHi) continue;
+      out.push({ X, Y, u, v, size: o.netSize * (1 - d.conf) + 0.2 * Math.abs(Math.log(q)), colorFrac: 1, area: 0, colorOk: true, net: true });
+    }
+    return out;
+  }
+
   // Kandidaten -> Kugelposition (Mittelpunkt auf Höhe R über der Bahn)
   _candidates(blobs) {
     const o = this.o, cam = this.cam;
@@ -455,7 +504,7 @@ export class Engine {
   // Startkandidaten sammeln: mehrere Bilder in Folge mit Vorwärtsbewegung
   _seedStep(cands, ts, seed, anyColor) {
     const o = this.o;
-    const zone = cands.filter(c => (anyColor ? c.size < o.motionSeedSize : c.colorOk) && c.Y >= o.startMin && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
+    const zone = cands.filter(c => (anyColor ? c.size < o.motionSeedSize : c.colorOk) && c.Y >= (c.net ? o.netStartMin : o.startMin) && c.Y <= o.startMax && c.X > -GUTTER_W && c.X < LANE_W + GUTTER_W);
     let best = null;
     if (seed.length) {
       const last = seed[seed.length - 1];
@@ -479,8 +528,10 @@ export class Engine {
         }
       }
     }
-    if (best) return [...seed, [ts, best.c.X, best.c.Y, best.c.u, best.c.v]];
-    if (zone.length) { zone.sort((a, b) => a.size - b.size || a.Y - b.Y); return [[ts, zone[0].X, zone[0].Y, zone[0].u, zone[0].v]]; }
+    if (best) return [...seed, [ts, best.c.X, best.c.Y, best.c.u, best.c.v, best.c.net ? 1 : 0]];
+    // Netz läuft nicht in jedem Bild: eine Netz-Spur nicht durch Flecken aus Bildern ohne Netz ersetzen
+    if (seed.length && !this._netFrame && seed.some(p => p[5])) return seed;
+    if (zone.length) { zone.sort((a, b) => a.size - b.size || a.Y - b.Y); return [[ts, zone[0].X, zone[0].Y, zone[0].u, zone[0].v, zone[0].net ? 1 : 0]]; }
     return seed;
   }
   _robustSeed(seed) { return this.o.seedDt > 0 && seed.length > 0 && seed[0][2] > this.o.seedDtFrom; }
@@ -495,6 +546,7 @@ export class Engine {
     this.state = 'roll'; this.track = seed.map(p => [p[0], p[1], p[2]]);
     this.itrack = seed.map(p => [p[0], (p[3] + 0.5) / this.ref.w, (p[4] + 0.5) / this.ref.h]);
     this.tStart = seed[0][0]; this.lastSeen = ts; this.alt = []; this.seedM = [];
+    const ln = seed.filter(p => p[5]).pop(); this.lastNetT = ln ? ln[0] : -1e9;
     if (!restart) { this.pinRef = this.pinRefCand; this._alignPins(this.pinRef); }
     ev.push({ type: restart ? 'restart' : 'start', t: this.tStart });
   }
@@ -509,10 +561,15 @@ export class Engine {
       if (this._seedReady(this.seed)) { this.motionTrack = false; this._startRoll(this.seed, ts, ev); }
       else if (this.seedM && this.seedM.length >= o.startFrames + o.motionSeedExtra && this.seed.length < 2 && this._seedReady(this.seedM)) { this.motionTrack = true; this._startRoll(this.seedM, ts, ev); }
     } else if (this.state === 'roll') {
+      // Spur kommt vom Kugel-Netz: Flecken aus dem Hintergrundmodell liegen in der Entfernung leicht anders -> nicht mischen,
+      // erst wenn das Netz die Kugel eine Weile nicht mehr findet (klein, verdeckt)
+      const netHeld = o.net && ts - this.lastNetT <= o.netHold;
+      if (netHeld) cands = cands.filter(c => c.net);
       const v = this._fitVel(this.track);
       const dt = ts - this.track[this.track.length - 1][0];
       let px, py;
-      if (v) { px = v.ax + v.vx * (ts - v.t0); py = v.ay + v.vy * (ts - v.t0); }
+      // Querbewegung begrenzen: aus wenigen Punkten kurz nach dem Abwurf ist vx unsicher und wächst über Lücken stark an
+      if (v) { const vx = Math.max(-o.maxVx, Math.min(o.maxVx, v.vx)), tl = this.track[this.track.length - 1]; px = v.ax + v.vx * (tl[0] - v.t0) + vx * (ts - tl[0]); py = v.ay + v.vy * (ts - v.t0); }
       else { const l = this.track[this.track.length - 1]; px = l[1]; py = l[2]; }
       const gy = 0.5 + Math.abs(v ? v.vy : 8) * dt * 0.35, gx = 0.25 + 1.2 * dt;
       let best = null;
@@ -523,7 +580,7 @@ export class Engine {
         const sc = ey / gy + ex / gx + c.size * 0.5 + (c.colorOk ? 0 : this.motionTrack ? 0.3 : 0.8);
         if (!best || sc < best.sc) best = { c, sc };
       }
-      if (!best) {
+      if (!best && !netHeld) {
         // Alternative Spur (z. B. war der Anfang die Kugel noch in der Hand)
         this.alt = this._seedStep(cands, ts, this.alt || []);
         if (this.alt.length >= this.o.startFrames + 1 && this._seedReady(this.alt) && ts - this.lastSeen > 0.12) {
@@ -534,7 +591,7 @@ export class Engine {
       if (best) {
         this.track.push([ts, best.c.X, best.c.Y]);
         this.itrack.push([ts, (best.c.u + 0.5) / this.ref.w, (best.c.v + 0.5) / this.ref.h]);
-        this.lastSeen = ts;
+        this.lastSeen = ts; if (best.c.net) this.lastNetT = ts;
       }
       const last = this.track[this.track.length - 1];
       const span = last[2] - this.track[0][2];
@@ -1061,7 +1118,7 @@ export class Engine {
 
   // ---- Haupteinstieg ----
   // frame: {data,width,height}; t in ms; crop: {data,width,height,rect} | null
-  process(frame, t, crop) {
+  process(frame, t, crop, net) {
     const ev = [];
     if (!this.ref) return { state: 'nocal', events: ev };
     const o = this.o;
@@ -1159,6 +1216,8 @@ export class Engine {
       this._rectify(frame, this.H);
       active = this._foreground();
       cands = this._candidates(this._blobs());
+      this._netFrame = !!(o.net && net);
+      if (o.net && net) { const nc = this._netCands(net); cands = o.netOnly ? nc : nc.concat(cands); }
     } else if (this.state === 'roll' && this.lost > 20) { ev.push({ type: 'abort', t: ts, why: 'kamera' }); this.resetShot(); }
     this._stateStep(cands, ts, ev);
 

@@ -779,6 +779,7 @@ function onPointerDown(e) {
 // ---------- Ergebnisse ----------
 function onResult(m) {
   if (m.type === 'flushed') { for (const ev of m.events || []) handleEvent(ev); setStatus('st.idle', 'ok'); return; }
+  if (m.type === 'netStatus') { window.__net = { ok: m.ok, ms: m.ms, error: m.error }; if (!m.ok) console.warn('Kugel-KI nicht verfügbar:', m.error); return; }
   if (m.type !== 'result') return;
   last = m;
   if (optCollect) { if (m.metrics) optCollect.samples.push(m.metrics); if (m.ms) optCollect.ms.push(m.ms); }
@@ -877,7 +878,8 @@ function updateHud() {
   if (!S.get('showHud') || !proc) { hud.textContent = ''; return; }
   const s = proc.stats;
   const q = last ? Math.round((last.quality || 0) * 100) : 0;
-  hud.textContent = `${t('btn.camera')} ${s.cam} · ${s.proc} fps · ${fmt(s.ms, 0)} ms · ${q}% · ${s.source}`;
+  const ki = last?.net === 'bereit' ? ` · KI ${fmt(last.netMs || 0, 0)} ms` : last?.net && last.net !== 'aus' ? ` · KI ${last.net}` : '';
+  hud.textContent = `${t('btn.camera')} ${s.cam} · ${s.proc} fps · ${fmt(s.ms, 0)} ms · ${q}% · ${s.source}${ki}`;
   hud.title = s.cam > s.proc + 5 ? t('misc.lowFps') : '';
 }
 function togglePause() {

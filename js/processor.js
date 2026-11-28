@@ -80,7 +80,18 @@ export class Processor {
     this.w = new MainThreadEngine(onmsg);
     this.mode = 'main';
   }
-  kill() { this.stop(); this.w?.terminate(); this.w = null; }
+  kill() { this.stop(); this.w?.terminate(); this.w = null; this.nw?.terminate(); this.nw = null; }
+  // Kugel-Netz: eigener Worker, über MessageChannel direkt mit dem Auswertungs-Worker verbunden
+  _startNet() {
+    if (this.mode !== 'worker' || this.nw) return;
+    try {
+      this.nw = new Worker(new URL('./vision/balldet-worker.js?v=' + (window.BT_VERSION || '0'), import.meta.url), { type: 'module' });
+      const ch = new MessageChannel();
+      this.nw.onerror = (e) => { console.warn('Kugel-Netz', e); this.post({ type: 'netFail', error: String(e.message || 'Worker-Fehler') }); this.nw?.terminate(); this.nw = null; };
+      this.nw.postMessage({ type: 'port', port: ch.port2 }, [ch.port2]);
+      this.post({ type: 'netPort', port: ch.port1 }, [ch.port1]);
+    } catch (e) { this.post({ type: 'netFail', error: String(e) }); }
+  }
   post(m, tr) { this.w?.postMessage(m, tr || []); }
   setOptions(options, workW) { this.post({ type: 'options', options, workW }); }
 
@@ -89,10 +100,14 @@ export class Processor {
     if (m.type === 'trackOk') { this.source = 'track-worker'; return; }
     if (m.type === 'trackFail') { this._startVFC(); return; }
     if (m.type === 'flushed') { this.onResult(m); return; }
+    // Bild wartet im Worker auf das Kugel-Netz: nächstes Bild darf schon kommen; sein Ergebnis folgt später (late)
+    if (m.type === 'queued') { if (this.source !== 'track-worker') this.busy = Math.max(0, this.busy - 1); return; }
+    if (m.type === 'netStatus') { this.net = m; this.onResult(m); return; }
+    if (m.type === 'needNet') { this._startNet(); return; }
     if (m.type === 'result' || m.type === 'calibrated' || m.type === 'color' || m.type === 'auto' || m.type === 'error') {
       if (this.waiters.has(m.seq)) { this.waiters.get(m.seq)(m); this.waiters.delete(m.seq); this.busy = Math.max(0, this.busy - 1); return; }
       if (m.type === 'result') { this._cnt.proc++; this._cnt.ms += m.ms; }
-      if (this.source !== 'track-worker') this.busy = Math.max(0, this.busy - 1);
+      if (this.source !== 'track-worker' && !m.late) this.busy = Math.max(0, this.busy - 1);
       if (m.type === 'error') console.warn('Auswertung:', m.message);
     }
     this.onResult(m);

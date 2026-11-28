@@ -37,23 +37,87 @@ function cropFrom(src, rect, max) {
   return { data: img.data, width: cw, height: ch, rect };
 }
 
+// ---- Kugel-Netz (eigener Worker) ----
+// Bilder laufen in Reihenfolge durch die Engine. Geht ein Bild ans Netz, warten es und alle folgenden, bis die
+// Erkennungen da sind (wenige Bilder Verzögerung); Bilder ohne Netz-Auftrag laufen sonst sofort durch.
+const VERSION = new URL(import.meta.url).searchParams.get('v') || '';
+let net = null, netReady = false, netBusy = false, netId = 0, netMs = 0, netState = 'aus';
+const queue = [];
+// Das Netz läuft in einem eigenen Worker, den die Seite startet (Worker aus Workern gehen nicht überall);
+// verbunden über einen MessagePort.
+function startNet() {
+  if (net || netState !== 'aus') return;
+  netState = 'lädt'; self.postMessage({ type: 'needNet' });
+}
+function attachNet(port) {
+  net = port;
+  net.onmessage = (e) => {
+    const r = e.data;
+    if (r.type === 'ready') {
+      netReady = r.ok; netState = r.ok ? 'bereit' : 'fehler';
+      self.postMessage({ type: 'netStatus', ok: r.ok, ms: r.ms, error: r.error });
+      if (!r.ok) { net = null; drain(true); }
+    } else if (r.type === 'dets') {
+      netBusy = false; netMs = r.ms;
+      const q = queue.find(x => x.id === r.id);
+      if (q) { q.dets = r.dets.map(d => ({ ...d, x: d.x + q.rect.x, y: d.y + q.rect.y })); q.id = 0; }
+      drain();
+    } else if (r.type === 'error') self.postMessage({ type: 'error', message: 'Kugel-Netz: ' + r.message });
+  };
+  net.postMessage({ type: 'init', version: VERSION });
+}
+function netFailed(error) {
+  netState = 'fehler'; netReady = false; netBusy = false; net = null;
+  self.postMessage({ type: 'netStatus', ok: false, error }); drain(true);
+}
+function subImage(frame, r) {
+  const out = new Uint8ClampedArray(r.w * r.h * 4), W = frame.width;
+  for (let y = 0; y < r.h; y++) out.set(frame.data.subarray(((r.y + y) * W + r.x) * 4, ((r.y + y) * W + r.x + r.w) * 4), y * r.w * 4);
+  return out;
+}
+function runFrame(q) {
+  const t0 = performance.now();
+  const res = { type: 'result', ...engine.process(q.frame, q.m.t, q.crop, q.dets) };
+  res.t = q.m.t; res.ms = q.ms + performance.now() - t0; res.seq = q.m.seq; res.net = netState; res.netMs = netMs;
+  if (q.late) res.late = true;
+  self.postMessage(res, res.debug ? [res.debug.mask.buffer] : []);
+}
+// all = true: auch Bilder ohne Netz-Ergebnis abarbeiten (Netz ausgefallen, Kalibrierung, Ende)
+function drain(all) {
+  while (queue.length && (all || !queue[0].id || queue.length > 12)) {
+    const q = queue.shift(); if (q.id) q.dets = null; runFrame(q);
+  }
+}
+
 async function handle(m, src) {
   const t0 = performance.now();
   const frame = frameFrom(src);
   lastFrame = frame;
   let res;
+  if (!m.calibrate && !m.auto && !m.snap && !m.sample) {
+    // normales Bild
+    const st = engine.state, needPins = engine.o.pinsEnabled && engine.cam && (st === 'settle' || st === 'roll');
+    const rect = engine.cropRequest(m.t) || (queue.length && needPins ? engine.pinRect() : null);
+    const q = { m, frame, crop: rect ? cropFrom(src, rect, engine.o.cropMax) : null, dets: null, id: 0, ms: 0 };
+    if (engine.o.net && netReady && !netBusy && engine.ref) {
+      const r = engine.netRect(m.t / 1000);
+      if (r) { q.id = ++netId; q.rect = r; const d = subImage(frame, r); netBusy = true; net.postMessage({ type: 'det', id: q.id, data: d.buffer, width: r.w, height: r.h, conf: 0.1 }, [d.buffer]); }
+    }
+    q.ms = performance.now() - t0;
+    if (!queue.length && !q.id) { runFrame(q); return; }
+    q.late = true; queue.push(q);
+    self.postMessage({ type: 'queued', seq: m.seq });
+    return;
+  }
+  drain(true);
   if (m.calibrate) {
     res = { type: 'calibrated', info: engine.calibrate(frame, m.calibrate), w: frame.width, h: frame.height };
   } else if (m.auto) {
     res = await findCorners(frame, m.auto);
   } else if (m.snap) {
     res = { type: 'auto', ...snapNormalized(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, m.snap.corners, m.snap.yTop || 18.288) };
-  } else if (m.sample) {
-    res = { type: 'color', color: engine.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
   } else {
-    const rect = engine.cropRequest(m.t);
-    const crop = rect ? cropFrom(src, rect, engine.o.cropMax) : null;
-    res = { type: 'result', ...engine.process(frame, m.t, crop) };
+    res = { type: 'color', color: engine.sampleColor(frame, m.sample.x, m.sample.y, m.sample.r) };
   }
   res.t = m.t; res.ms = performance.now() - t0; res.seq = m.seq;
   self.postMessage(res, res.debug ? [res.debug.mask.buffer] : []);
@@ -82,18 +146,20 @@ setInterval(() => { if (reader) { self.postMessage({ type: 'camfps', n: camFrame
 self.onmessage = (e) => {
   const m = e.data;
   try {
-    if (m.type === 'options') { if (m.workW) workW = m.workW; engine.setOptions(m.options); }
+    if (m.type === 'options') { if (m.workW) workW = m.workW; engine.setOptions(m.options); if (engine.o.net) startNet(); }
     else if (m.type === 'frame') { const src = m.bitmap || m.vf; try { handle(m, src).catch(e => self.postMessage({ type: 'error', message: String(e), seq: m.seq })); } finally { src.close?.(); } }
     else if (m.type === 'track') {
       if (!self.MediaStreamTrackProcessor) { self.postMessage({ type: 'trackFail' }); m.track.stop(); return; }
       readTrack(m.track).catch(err => self.postMessage({ type: 'trackFail', message: String(err) }));
     }
     else if (m.type === 'stopTrack') { reader?.cancel(); reader = null; }
+    else if (m.type === 'netPort') attachNet(m.port);
+    else if (m.type === 'netFail') netFailed(m.error);
     else if (m.type === 'pause') paused = !!m.on;
     else if (m.type === 'ballColor') engine.setBallColor(m.color);
     else if (m.type === 'pinsBefore') engine.setPinsBefore(m.pins);
-    else if (m.type === 'reset') engine.resetShot();
-    else if (m.type === 'flush') self.postMessage({ type: 'flushed', events: engine.flush(m.t) });
+    else if (m.type === 'reset') { drain(true); engine.resetShot(); }
+    else if (m.type === 'flush') { drain(true); self.postMessage({ type: 'flushed', events: engine.flush(m.t) }); }
   } catch (err) {
     self.postMessage({ type: 'error', message: String(err?.message || err), seq: m.seq });
   }

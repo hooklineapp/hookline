@@ -43,6 +43,7 @@ export const SCHEMA = [
   S('planeFeatures', 'bool', E.planeFeatures, { group: 'processing', engine: true }),
   S('gridScale', 'select', String(E.gridScale), { group: 'processing', options: ['0.75', '1', '1.5', '2'], engine: true, num: true }),
   // Kugel
+  S('net', 'bool', true, { group: 'ball', engine: true, basic: true }),
   S('detMode', 'select', E.detMode, { group: 'ball', options: ['both', 'motion', 'color'], engine: true }),
   S('motionThr', 'range', E.motionThr, { group: 'ball', min: 10, max: 120, step: 1, engine: true }),
   S('devK', 'range', E.devK, { group: 'ball', min: 1, max: 8, step: 0.1, engine: true }),
