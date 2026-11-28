@@ -6,8 +6,9 @@ import { initLive, showLive, hideLive } from './views/live.js';
 import { initHistory, showHistory } from './views/history.js';
 import { initStats, showStats } from './views/stats.js';
 import { initOptions, showOptions } from './views/options.js';
+import { closeSheets } from './ui.js';
 
-window.BT_VERSION = '1.23.0';
+window.BT_VERSION = '1.24.0';
 S.loadSettings();
 { const lk = new URLSearchParams(location.search).get('look'); if (lk) { const [st, ac, th] = lk.split(','); if (st) S.set('uiStyle', st); if (ac && /^[0-9a-f]{6}$/i.test(ac)) S.set('accentColor', '#' + ac); if (th) S.set('theme', th); } }
 setLang(S.get('lang'));
@@ -46,6 +47,7 @@ document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.d
 const views = { live: [showLive, hideLive], history: [showHistory], stats: [showStats], options: [showOptions] };
 let cur = null;
 async function tab(name) {
+  closeSheets();   // ein offener Dialog gehört zur alten Ansicht
   if (cur === name) { if (name !== 'live') views[name][0](); return; }
   if (cur && views[cur][1]) views[cur][1]();
   cur = name;

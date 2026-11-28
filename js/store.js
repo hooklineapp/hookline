@@ -121,5 +121,20 @@ export async function deleteShot(shot) {
   if (shot.sessionId === state.session?.id) await relinkGame(shot.game);
   emit('shot');
 }
+// Ein ganzes Spiel einer Session löschen; spätere Spiele rücken nach (Spiel 3 wird Spiel 2 usw.)
+export async function deleteGame(sessionId, game) {
+  const all = await db.shotsOf(sessionId);
+  for (const s of all) {
+    const g = s.game || 1;
+    if (g === game) await db.del('shots', s.id);
+    else if (g > game) { s.game = g - 1; await db.put('shots', s); }
+  }
+  if (sessionId === state.session?.id) {
+    state.shots = (await db.shotsOf(sessionId));
+    if (state.game > game) state.game--;
+    state.game = Math.max(1, state.game);
+  }
+  emit('shot');
+}
 export const allPins = () => [...PIN_IDS];
 export { emit };

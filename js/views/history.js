@@ -3,7 +3,7 @@ import { h, sheet, confirmBox, toast, fmt } from '../ui.js';
 import { t, getLang } from '../i18n.js';
 import * as S from '../settings.js';
 import * as db from '../db.js';
-import { state, analyze, updateShot, deleteShot } from '../store.js';
+import { state, analyze, updateShot, deleteShot, deleteGame } from '../store.js';
 import { buildGame, gameStats } from '../scoring.js';
 import { Replay, miniLane } from '../replay.js';
 import { pinMini, pinPadEl, scoreCard, metricList, speedStr } from './common.js';
@@ -47,9 +47,9 @@ async function renderSessions() {
     const scores = games.map(g => buildGame(shots.filter(x => (x.game || 1) === g))).filter(g => g.complete).map(g => g.total);
     list.append(h('div.item', { onclick: () => go({ v: 'session', id: s.id }) },
       h('div.grow', null, h('b', null, dateStr(s.date)), h('br'),
-        h('small', null, (bowlers[s.bowlerId]?.name || '?') + ' · ' + t('h.shots', { n: shots.length }) + ' · ' + t('h.games', { n: games.length }) +
+        h('small', null, (bowlers[s.bowlerId]?.name || '?') + ' · ' + t(shots.length === 1 ? 'h.shots1' : 'h.shots', { n: shots.length }) + ' · ' + t(games.length === 1 ? 'h.games1' : 'h.games', { n: games.length }) +
           (scores.length ? ' · Ø ' + fmt(scores.reduce((a, b) => a + b, 0) / scores.length, 0) : ''))),
-      s.id === state.session?.id ? h('span.chip.ok', null, 'aktiv') : null, '›'));
+      s.id === state.session?.id ? h('span.chip.ok', null, t('h.active')) : null, '›'));
   }
   root.append(list);
 }
@@ -65,7 +65,8 @@ async function renderSession(id) {
   for (const g of games) {
     const gs = shots.filter(x => (x.game || 1) === g);
     const st = gameStats(gs);
-    root.append(h('h3', null, t('h.game', { n: g }) + (st.complete ? ' · ' + st.total : '')), scoreCard(st));
+    root.append(h('div.row', { style: { alignItems: 'center' } }, h('h3', null, t('h.game', { n: g }) + (st.complete ? ' · ' + st.total : '')), h('span.spacer'),
+      h('button.skip', { onclick: async () => { if (await confirmBox(t('h.deleteGame', { n: g }))) { await deleteGame(id, g); render(); } } }, t('h.deleteGameBtn'))), scoreCard(st));
     const list = h('div.list', { style: { marginTop: '8px' } });
     for (const sh of gs) {
       const an = sh.an || analyze(sh);
@@ -126,7 +127,12 @@ async function renderShot(id, sid) {
     p.onprogress = i === 0 ? (v) => { seek.value = Math.round(v * 1000); } : null;
     p.play();
   }));
-  root.append(h('div.row', { style: { marginBottom: '8px' } }, seg), box, h('div.card.rctl', null, playBtn, seek, speedSel));
+  // Vergleichslinien: dünne graue Linien = die Würfe davor in dieser Session (aus allen Spielen); ein-/ausschaltbar
+  let cmpOn = cmp.length > 0;
+  const cmpLabel = () => (cmpOn ? '✓ ' : '') + t('h.cmpToggle', { n: cmp.length });
+  const cmpBtn = cmp.length ? h('button.cmptoggle' + (cmpOn ? '.on' : ''), { onclick: () => { cmpOn = !cmpOn; cmpBtn.classList.toggle('on', cmpOn); cmpBtn.textContent = cmpLabel(); players.forEach(p => { p.cmp = cmpOn ? cmp : []; p.draw?.(); }); legend.style.opacity = cmpOn ? '1' : '.5'; } }, cmpLabel()) : null;
+  const legend = h('div.hint', { style: { margin: '6px 2px 0' } }, cmp.length ? t(cmp.length === 1 ? 'h.cmpLegend1' : 'h.cmpLegend', { n: cmp.length }) : t('h.cmpNone'));
+  root.append(h('div.row', { style: { marginBottom: '8px', flexWrap: 'wrap', gap: '8px' } }, seg, cmpBtn), box, legend, h('div.card.rctl', null, playBtn, seek, speedSel));
   init();
   // Kennzahlen
   const mt = h('div.mtable', null, metricList(an, shot).map(m => h('div', null, h('small', null, t(m.k)), h('b', null, m.v))));

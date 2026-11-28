@@ -464,9 +464,9 @@ p.note { margin: 0 2px 8px; padding: 8px 10px; border-radius: 12px; background: 
 :root[data-style="pin"] .mode-switch small { background: var(--bg); padding: 4px 8px 4px 0; border-radius: 0 8px 8px 0; flex: 0 1 auto; }
 
 /* ---------- Klickflächen in Menüs deutlich als Knopf erkennbar ---------- */
-.view .card button:not(.primary):not(.danger):not(.preset):not(.design):not(.accent):not(.skip),
-.view .opt button:not(.primary):not(.danger), .view .row > button:not(.primary):not(.danger):not(.skip), .view .back,
-.sheet button:not(.primary):not(.danger):not(.icon):not(.menuitem), .view .rctl button:not(.primary) {
+.view .card button:not(.primary):not(.danger):not(.preset):not(.design):not(.accent):not(.skip):not(.pp),
+.view .opt button:not(.primary):not(.danger), .view .row > button:not(.primary):not(.danger):not(.skip):not(.cmptoggle), .view .back,
+.sheet button:not(.primary):not(.danger):not(.icon):not(.menuitem):not(.pp), .view .rctl button:not(.primary) {
   background: var(--bg2); border: 1px solid var(--line); color: var(--ink); font-weight: 600;
 }
 .view .card button:not(.primary):not(.danger):hover, .view .opt button:hover, .view .back:hover { filter: brightness(.97); }
@@ -638,3 +638,7 @@ button.step { background: none !important; border: 0 !important; box-shadow: non
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .autoscan-bar, .autoscan-label::before { animation: none; } }
 .autoscan.viz .autoscan-bar { display: none; }
+
+/* Replay: Vergleichslinien ein/aus */
+.view button.cmptoggle { min-height: 36px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 650; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); }
+.view button.cmptoggle.on { background: var(--acc); border-color: transparent; color: #fff; }

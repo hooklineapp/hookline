@@ -116,7 +116,9 @@ async function startCam() {
     setStatus(calibrated ? 'st.idle' : 'st.nocal', calibrated ? 'ok' : 'warn');
     if (!calibrated && S.get('autoWizard') && !welcomeOpen && !sessionStorage.getItem('bt.skipWizard')) startCalib();
   } catch (e) {
-    const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : t('st.nocam') + (e.message ? ' (' + e.message + ')' : '');
+    // verständliche Meldung statt technischem Browser-Text (der bleibt in der Konsole)
+    if (e.message) console.warn('Kamera:', e.message);
+    const msg = e.code === 'https' ? t('cam.https') : e.code === 'denied' ? t('cam.denied') : e.code === 'busy' ? t('cam.busy') : t('cam.none');
     hint.style.display = 'grid'; hint.firstChild.innerHTML = '';
     hint.firstChild.append(h('p', null, msg), h('div.cal-actions', { style: { justifyContent: 'center' } },
       h('button.pillbtn', { onclick: () => startCam() }, t('btn.retry')),

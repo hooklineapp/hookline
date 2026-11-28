@@ -26,28 +26,33 @@ export function nextPosition(shots) {
 }
 
 export function buildGame(shots) {
-  const frames = Array.from({ length: 10 }, (_, i) => ({ n: i + 1, rolls: [], marks: [], split: false, score: null }));
-  const rolls = [];
+  // Würfe ohne gemessene Pins (pinsAfter null) zählen als unbekannt: Anzeige „?“, keine Punkte ab diesem Frame.
+  // Für den weiteren Ablauf (welcher Frame/Wurf als Nächstes) wird angenommen, dass alle Pins gefallen sind.
+  const frames = Array.from({ length: 10 }, (_, i) => ({ n: i + 1, rolls: [], marks: [], split: false, score: null, unknown: false }));
+  const rolls = [], unk = [];
   let f = 0, ball = 1, standing = [...PIN_IDS];
   let complete = false;
   for (const s of shots) {
     if (f > 9) break;
     const before = new Set(standing);
+    const unknown = !s.pinsAfter;
     const after = (s.pinsAfter || []).filter(p => before.has(p));
     const knocked = before.size - after.length;
     const fr = frames[f];
-    fr.rolls.push(knocked); rolls.push(knocked);
+    fr.rolls.push(knocked); rolls.push(knocked); unk.push(unknown);
+    if (unknown) fr.unknown = true;
+    const mark = (m) => fr.marks.push(unknown ? '?' : m);
     if (ball === 1 && after.length && isSplit(after)) fr.split = true;
     if (f < 9) {
-      if (ball === 1 && after.length === 0) { fr.marks.push('X'); f++; ball = 1; standing = [...PIN_IDS]; }
-      else if (ball === 1) { fr.marks.push(knocked ? String(knocked) : '-'); ball = 2; standing = after; }
-      else { fr.marks.push(after.length === 0 ? '/' : (knocked ? String(knocked) : '-')); f++; ball = 1; standing = [...PIN_IDS]; }
+      if (ball === 1 && after.length === 0) { mark('X'); f++; ball = 1; standing = [...PIN_IDS]; }
+      else if (ball === 1) { mark(knocked ? String(knocked) : '-'); ball = 2; standing = after; }
+      else { mark(after.length === 0 ? '/' : (knocked ? String(knocked) : '-')); f++; ball = 1; standing = [...PIN_IDS]; }
     } else { // 10. Frame
       const r = fr.rolls; const k = r.length;
       const prevFull = k === 1 || (k === 2 && r[0] === 10) || (k === 3 && (r[0] === 10 && r[1] === 10 || r[0] + r[1] === 10));
       const freshRack = before.size === 10;
-      if (after.length === 0) fr.marks.push(freshRack ? 'X' : '/');
-      else fr.marks.push(knocked ? String(knocked) : '-');
+      if (after.length === 0) mark(freshRack ? 'X' : '/');
+      else mark(knocked ? String(knocked) : '-');
       void prevFull;
       if (k === 1) { standing = after.length === 0 ? [...PIN_IDS] : after; ball = 2; }
       else if (k === 2) {
@@ -58,9 +63,13 @@ export function buildGame(shots) {
   }
   // Wertung
   let total = 0, idx = 0;
+  const known = (a, n) => unk.slice(a, a + n).every(u => !u);   // Würfe a..a+n-1 alle gemessen?
   for (let i = 0; i < 10; i++) {
     const fr = frames[i];
     if (!fr.rolls.length) break;
+    // Frame braucht eigene Würfe + Bonuswürfe; ist einer davon unbekannt, endet die Wertung hier
+    const need = i < 9 ? (fr.rolls[0] === 10 ? 3 : fr.rolls.length === 2 && fr.rolls[0] + fr.rolls[1] === 10 ? 3 : fr.rolls.length) : fr.rolls.length;
+    if (!known(idx, need)) break;
     if (i < 9) {
       if (fr.rolls[0] === 10) {
         if (rolls.length > idx + 2) { total += 10 + rolls[idx + 1] + rolls[idx + 2]; fr.score = total; }
@@ -75,7 +84,7 @@ export function buildGame(shots) {
     } else if (complete) { total += fr.rolls.reduce((a, b) => a + b, 0); fr.score = total; }
   }
   // maximal möglich (für Anzeige)
-  return { frames, complete, total, cur: { frame: Math.min(f, 9) + 1, ball, pinsBefore: standing } };
+  return { frames, complete, total, unknown: unk.some(Boolean), cur: { frame: Math.min(f, 9) + 1, ball, pinsBefore: standing } };
 }
 
 export function gameStats(shots) {
@@ -83,6 +92,7 @@ export function gameStats(shots) {
   let strikes = 0, strikeChances = 0, spares = 0, spareChances = 0, splits = 0, opens = 0;
   g.frames.forEach((fr, i) => {
     if (!fr.rolls.length) return;
+    if (fr.unknown) return;   // ohne gemessene Pins weder Strike noch Spare zählen
     strikeChances++;
     if (fr.rolls[0] === 10) strikes++;
     else if (fr.rolls.length >= 2) { spareChances++; if (fr.rolls[0] + fr.rolls[1] === 10) spares++; else opens++; }

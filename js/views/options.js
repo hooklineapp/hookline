@@ -19,6 +19,8 @@ function keepOpen(d, key, def) {
   return d;
 }
 
+let afterUpdate = null;   // gerade aktualisiert: Bereich „Über“ offen lassen und an die alte Stelle scrollen
+try { afterUpdate = JSON.parse(sessionStorage.getItem('bt.afterUpdate') || 'null'); sessionStorage.removeItem('bt.afterUpdate'); } catch { /* */ }
 export async function showOptions(keepLook) {
   if (!keepLook) lookOpen = false;
   const keepY = keepLook ? root.scrollTop : 0;
@@ -37,6 +39,10 @@ export async function showOptions(keepLook) {
   root.append(aboutCard());
   root.append(lookCard());
   if (keepY) root.scrollTop = keepY;
+  if (afterUpdate) {
+    const a = afterUpdate; afterUpdate = null;
+    requestAnimationFrame(() => { if (a.y) root.scrollTop = a.y; if (a.wy) window.scrollTo(0, a.wy); });
+  }
 }
 
 // Kugelfarbe als Farbfelder: bei gemusterten Kugeln bis zu 3 erkannte Farbgruppen
@@ -70,7 +76,7 @@ async function editBowler(b, isNew) {
   acts.push({ label: t('btn.save'), value: 'ok', primary: true });
   const v = await sheet(isNew ? t('o.newBowler') : b.name, h('div', null, h('label', null, t('o.name')), name, h('br'), h('label', null, t('o.hand')), hand), acts);
   if (v === 'ok') { b.name = name.value.trim() || t('bowler.default'); b.hand = hand.value; await saveBowler(b); if (isNew) await setBowler(b.id); }
-  else if (v === 'del' && await confirmBox(b.name + ' ' + t('btn.delete') + '?')) await deleteBowler(b.id);
+  else if (v === 'del' && await confirmBox(t('o.deleteBowler', { name: b.name }))) await deleteBowler(b.id);
   else if (v === 'clr') { b.ballColor = null; await saveBowler(b); }
   const { syncBall } = await import('./live.js'); syncBall();
   showOptions();
@@ -99,7 +105,7 @@ function control(s, cams) {
     ctl = h('label.switch', null, h('input', { id: 'o-' + s.key, type: 'checkbox', checked: !!v, onchange: (e) => S.set(s.key, e.target.checked) }), h('i'));
   } else if (s.type === 'select') {
     ctl = h('select', { id: 'o-' + s.key, onchange: (e) => { S.set(s.key, e.target.value); if (s.key === 'lang') { setLang(e.target.value); location.reload(); } } },
-      s.options.map(o => h('option', { value: o, selected: String(v) === o }, has('val.' + o) ? t('val.' + o) : o)));
+      s.options.map(o => h('option', { value: o, selected: String(v) === o }, has('val.' + s.key + '.' + o) ? t('val.' + s.key + '.' + o) : has('val.' + o) ? t('val.' + o) : o)));   // eigene Beschriftung je Einstellung vor der allgemeinen
   } else if (s.type === 'range') {
     const val = h('span.val', null, v);
     ctl = h('div.row', null, h('input', { id: 'o-' + s.key, type: 'range', min: s.min, max: s.max, step: s.step, value: v,
@@ -154,9 +160,15 @@ function aboutCard() {
     if (!u.available) { status.textContent = t('u.current'); return; }
     status.textContent = t('u.available', { v: u.latest });
     btn.textContent = t('u.install'); btn.classList.add('primary');
-    btn.onclick = async () => { btn.disabled = true; status.textContent = t('u.installing'); const ov = updateOverlay(u.latest); await applyUpdate(u.latest, ov.set); };
+    btn.onclick = async () => {
+      btn.disabled = true; status.textContent = t('u.installing');
+      // nach dem Neuladen wieder hier stehen (Bereich „Über“ offen, gleiche Stelle), statt oben anzufangen
+      try { sessionStorage.setItem('bt.afterUpdate', JSON.stringify({ y: root.scrollTop, wy: window.scrollY })); } catch { /* */ }
+      const ov = updateOverlay(u.latest); await applyUpdate(u.latest, ov.set);
+    };
   } }, t('u.check'));
   const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
+  if (afterUpdate) opened.about = true;
   return keepOpen(h('details.grp', null, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
     h('div.opt', null, h('span', null, t('u.title'), h('br'), status), btn),
     h('div.opt', null, h('span', null, t('o.install')), h('span')),
@@ -201,7 +213,7 @@ function profilesCard() {
   const name = h('input.inp', { placeholder: t('o.profileName'), style: { flex: 1 } });
   const rows = list.length ? list.map(p => h('div.profile-row', null, h('span', null, p.name),
     h('button', { onclick: () => { S.loadProfile(p.name); toast(t('o.profileLoaded'), 'ok'); showOptions(); } }, t('o.load')),
-    h('button', { onclick: async () => { if (await confirmBox(p.name + ' ' + t('btn.delete') + '?')) { S.deleteProfile(p.name); showOptions(); } }, 'aria-label': t('btn.delete') }, '✕'))) : [h('p.muted', { style: { margin: '4px 0', fontSize: '13px' } }, t('o.noProfiles'))];
+    h('button', { onclick: async () => { if (await confirmBox(t('o.deleteBowler', { name: p.name }))) { S.deleteProfile(p.name); showOptions(); } }, 'aria-label': t('btn.delete') }, '✕'))) : [h('p.muted', { style: { margin: '4px 0', fontSize: '13px' } }, t('o.noProfiles'))];
   return keepOpen(h('details.grp', null, h('summary', null, t('o.profiles')),
     h('div', { style: { padding: '4px 16px 12px' } }, rows,
       h('div.row', { style: { marginTop: '10px' } }, name,

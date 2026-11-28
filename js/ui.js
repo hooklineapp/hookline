@@ -37,10 +37,12 @@ export function sheet(title, body, actions = [], opts = {}) {
           m.icon ? icon(m.icon) : null, h('span', null, m.label), m.sub ? h('small', null, m.sub) : null))) : null),
         actions.length ? h('div.sheet-actions', null, actions.map(a =>
           h('button' + (a.primary ? '.primary' : '') + (a.danger ? '.danger' : ''), { onclick: () => close(a.value) }, a.label))) : null));
+    wrap._close = close;   // closeSheets(): offene Dialoge beim Ansichtswechsel schließen
     document.body.append(wrap);
     requestAnimationFrame(() => wrap.classList.add('open'));
   });
 }
+export function closeSheets() { document.querySelectorAll('.sheet-wrap').forEach(w => w._close?.(null)); }
 export async function confirmBox(msg, danger = true) {
   const v = await sheet(msg, null, [{ label: t('btn.cancel'), value: false }, { label: t('btn.ok'), value: true, primary: !danger, danger }]);
   return !!v;

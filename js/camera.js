@@ -46,7 +46,7 @@ export async function startCamera(video, opt) {
   } catch (e) {
     // DOMException hat ein schreibgeschütztes "code" -> eigenes Fehlerobjekt
     const err = new Error(e.message || e.name || 'Kamera');
-    err.code = e.name === 'NotAllowedError' || e.name === 'SecurityError' ? 'denied' : 'nocam';
+    err.code = e.name === 'NotAllowedError' || e.name === 'SecurityError' ? 'denied' : e.name === 'NotReadableError' ? 'busy' : 'nocam';
     throw err;
   }
   let track = stream.getVideoTracks()[0];

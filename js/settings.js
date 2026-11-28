@@ -20,6 +20,7 @@ export const SCHEMA = [
   S('autoSave', 'bool', true, { group: 'general' , basic: true }),
   S('confirmShots', 'bool', false, { group: 'general' , basic: true }),
   S('fileOneShot', 'bool', true, { group: 'general', basic: true }),
+  S('fileRealtime', 'bool', true, { group: 'general', basic: true }),   // Videodatei wie Live-Kamera (Echtzeit, Bilder überspringen)
   // Kamera
   S('camDevice', 'camera', '', { group: 'camera' , basic: true }),
   S('camRes', 'select', 'auto', { group: 'camera', options: ['auto', '480', '720', '1080', '1440', '2160'] , basic: true }),
@@ -31,7 +32,6 @@ export const SCHEMA = [
   S('fovDeg', 'range', 0, { group: 'camera', min: 0, max: 120, step: 1, engine: true }),
   // Verarbeitung
   S('workW', 'select', '640', { group: 'processing', options: ['400', '480', '640', '800', '960', '1280'] }),
-  S('fileRealtime', 'bool', true, { group: 'processing', basic: true }),   // Videodatei wie Live-Kamera (Echtzeit, Bilder überspringen)
   S('useWorker', 'bool', true, { group: 'processing' }),
   S('trackMode', 'select', E.trackMode, { group: 'processing', options: ['hand', 'tripod'], engine: true , basic: true }),
   S('features', 'range', E.features, { group: 'processing', min: 30, max: 400, step: 10, engine: true }),

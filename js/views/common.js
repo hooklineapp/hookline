@@ -29,7 +29,7 @@ export function pinPadEl(before, standing, onchange, detail) {
       if (!id) { el.append(h('button.na')); continue; }
       const cls = !b.has(id) ? '.na' : st.has(id) ? '' : '.down';
       const dcls = detail?.[id]?.state?.startsWith('hidden') ? '.hidden' : '';
-      el.append(h('button' + cls + dcls, {
+      el.append(h('button.pp' + cls + dcls, {   // .pp: eigener Pin-Stil, nicht der allgemeine Menüknopf
         title: detail?.[id] ? `${detail[id].state} ${detail[id].ratio}` : '',
         onclick: () => { st.has(id) ? st.delete(id) : st.add(id); draw(); onchange?.([...st].sort((a, b) => a - b)); },
       }, id));
