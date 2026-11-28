@@ -187,7 +187,9 @@ export class Processor {
   // Schlüsselbild neu dekodieren). Die Abspielgeschwindigkeit passt sich an: so schnell, wie die Auswertung
   // mitkommt, ohne Bilder auszulassen. Zeitstempel kommen aus dem Video, daher stimmen Tempo und Zeiten.
   // Ohne requestVideoFrameCallback (alte Browser): Bild für Bild springen.
-  async runFile(video, fps, onProgress, shouldStop) {
+  // realtime = true: wie Live-Kamera – Video läuft in Echtzeit, ausgewertet wird jeweils das neueste Bild, das die
+  // Auswertung schafft (übrige werden übersprungen). false: verlangsamt, jedes Bild wird ausgewertet.
+  async runFile(video, fps, onProgress, shouldStop, realtime = false) {
     this.stop();
     const dur = video.duration;
     // Bilder holen: per requestVideoFrameCallback (genau jedes Bild), sonst per Bildschirm-Takt (currentTime),
@@ -196,7 +198,7 @@ export class Processor {
     this.source = 'file:' + mode;
     video.pause(); video.muted = true;
     if (video.currentTime > 0.01) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = 0; }); }
-    let rate = 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0, procN = 0;
+    let rate = realtime ? 1 : 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0, procN = 0;
     video.playbackRate = rate;
     await new Promise((resolve) => {
       const finish = () => {
@@ -224,6 +226,7 @@ export class Processor {
         let bmp;
         try { bmp = await createImageBitmap(video); } catch { schedule(); return; }
         if (busy) { if (pending) { pending.bmp.close?.(); dropped++; } pending = { bmp, t }; } else run(bmp, t);
+        if (realtime) { schedule(); return; }   // Echtzeit: kein Tempo anpassen, liegengebliebene Bilder fallen weg
         // Geschwindigkeit an das gemessene Auswertungstempo anpassen (ausgewertete Bilder je Sekunde / Bilder je
         // Sekunde des Videos, mit Reserve) und nur sanft ändern: kein ständiges Schneller/Langsamer (wirkte ruckelig)
         const nowMs = performance.now();

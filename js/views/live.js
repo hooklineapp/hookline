@@ -966,7 +966,7 @@ async function runFile(fps) {
   window.__fileDone = false;
   if (paused) togglePause();
   setStatus('file.running', 'ok');
-  await proc.runFile(video, fps, (i, n) => { progress.style.transform = `scaleX(${i / n})`; }, () => fileStop || fileEarly || !active);
+  await proc.runFile(video, fps, (i, n) => { progress.style.transform = `scaleX(${i / n})`; }, () => fileStop || fileEarly || !active, S.get('fileRealtime'));
   await new Promise(r => setTimeout(r, 700));   // letzter Wurf (Abschluss am Videoende) kommt etwas später
   if (savingShot) await savingShot;             // Speichern/Pins-Bestätigung abwarten
   window.__fileDone = true;
