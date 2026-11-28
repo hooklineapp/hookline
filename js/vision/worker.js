@@ -158,6 +158,7 @@ self.onmessage = (e) => {
     else if (m.type === 'pause') paused = !!m.on;
     else if (m.type === 'ballColor') engine.setBallColor(m.color);
     else if (m.type === 'pinsBefore') engine.setPinsBefore(m.pins);
+    else if (m.type === 'checkPins') engine.requestStartPins();
     else if (m.type === 'reset') { drain(true); engine.resetShot(); }
     else if (m.type === 'flush') { drain(true); self.postMessage({ type: 'flushed', events: engine.flush(m.t) }); }
   } catch (err) {

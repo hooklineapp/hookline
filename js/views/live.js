@@ -24,6 +24,7 @@ let corners = [], handles = [], calibrated = false, last = null, lastShot = null
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
 let quietUntil = 0, calPos = null;   // calPos: frei gezogene Höhe des Ecken-Menüs (px)   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
 let fileStart = 0;   // Video: Auswertung ab dem Bild, auf dem die Ecken geprüft wurden
+let scan = null, scanQuads = [], scanViz = null, vizOn = false;   // vizOn: Scanner-Anzeige während „Auto“   // Lade-Anzeige bei „Auto“: Suchbalken, Text, schon gefundene Vierecke
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let lastCal = null, laneKeep = false;   // letzte Einrichtung (Referenzbild + Ecken) für Bahn-Profile
@@ -39,7 +40,8 @@ export function initLive(el) {
   debugCv = h('canvas.debugcv', { style: { display: 'none' } });
   hint = h('div.empty-hint', null, h('div', null, t('st.starting')));
   progress = h('div.progress', { style: { transform: 'scaleX(0)' } });
-  stage = h('div.stage', null, video, freeze, ov, hint, loupe, debugCv, progress);
+  scan = h('div.autoscan', { style: { display: 'none' } }, h('div.autoscan-bar'), h('div.autoscan-label'));
+  stage = h('div.stage', null, video, freeze, ov, hint, loupe, debugCv, progress, scan);
   statusPill = h('span.chip.status', null, h('i.dot'), h('span', null, ''));
   framePill = h('button.chip.game', { onclick: showGame }, '');
   bowlerPill = h('button.avatar', { onclick: () => document.dispatchEvent(new CustomEvent('bt:tab', { detail: 'options' })), 'aria-label': t('o.bowlers') }, '');
@@ -262,12 +264,29 @@ async function runSnap() {
 }
 // Lagesensor beim ersten Antippen einschalten (iOS fragt dafür einmal nach der Erlaubnis)
 if (typeof document !== 'undefined') document.addEventListener('pointerdown', () => { startTilt(); }, { once: true, capture: true });
+function scanShow(text) { scanQuads = []; scan.querySelector('.autoscan-label').textContent = text; scan.style.display = ''; requestDraw(); }
+function scanText(text) { scan.querySelector('.autoscan-label').textContent = text; }
+function scanHide() { scan.style.display = 'none'; scan.classList.remove('viz'); scanQuads = []; scanViz = null; requestDraw(); }
+// Prüfdaten der Suche zeigen: ein Scanner läuft von oben nach unten und blendet ein, was er „sieht“
+// (Bahnfläche des Netzes als Punkte, Prüfstriche des Einrastens, Rinnen-Prüfpunkte). dur in ms.
+function playViz(viz, dur = 900) {
+  if (!viz) return Promise.resolve();
+  scanViz = { ...viz, t0: performance.now(), dur }; scan.classList.add('viz');
+  const tick = () => { if (!scanViz) return; requestDraw(); if (performance.now() - scanViz.t0 < scanViz.dur + 400) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  return new Promise(r => setTimeout(r, dur + 350));
+}
 async function runAuto(target) {
   startTilt();
+  // Scanner-Anzeige bei jedem Druck auf „Auto“ (nur hier; während der Auswertung läuft nichts davon)
+  vizOn = true;
   calPanel.classList.add('busy');
+  if (vizOn) scanShow(t('cal.scan'));
   // Video: mehrere Bilder der ersten Sekunden prüfen (der Spieler verdeckt anfangs oft Foul-Linie und Anlauf)
   const r = fileMode && !target && video.duration > 1 ? await autoMulti() : await autoOne(target);
+  if (vizOn && r?.viz && !(fileMode && !target)) await playViz(r.viz);
   calPanel.classList.remove('busy');
+  scanHide();
   if (!r) return;
   pickLane = false;
   if (r.t != null) { fileStart = r.t; if (freezeBmp) { unfreeze(); await doFreeze(); } }
@@ -281,7 +300,7 @@ async function autoOne(target, src) {
   if (!src) return null;
   // Live-Kamera: Neigung des Horizonts (Lagesensor) mitgeben, damit die obere Linie zur Foul-Linie passt
   const horizon = fileMode ? null : (freezeBmp ? freezeHorizon : horizonDeg());
-  return proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')), horizon } });
+  return proc.request(src, { auto: { target, yTop: topLineY(S.get('topLine')), horizon, viz: vizOn } });
 }
 // Bahn auf bis zu 13 Bildern (0–6 s) suchen; es gewinnt die Gruppe gleicher Ergebnisse auf den meisten Bildern,
 // daraus je Ecke der Median: eine Ecke, die nur auf manchen Bildern auf den Spieler rutscht, fällt heraus
@@ -295,8 +314,10 @@ async function autoMulti() {
     last = tt;
     if (i || Math.abs(video.currentTime - tt) > 0.01) await seek(tt);
     const bmp = await grabFrame();
-    const r = bmp && await proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')) } });
-    if (r?.corners) found.push({ t: tt, r, c: r.ordered ? r.corners : orderCorners(r.corners) });
+    if (vizOn) scanText(t('cal.scanN', { i: i + 1, n: 13 }));
+    const r = bmp && await proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')), viz: vizOn } });
+    if (vizOn && r?.viz) playViz(r.viz, 450);
+    if (r?.corners) { found.push({ t: tt, r, c: r.ordered ? r.corners : orderCorners(r.corners) }); if (vizOn) { scanQuads.push(found[found.length - 1].c); requestDraw(); } }
     if (tt >= video.duration - 0.1) break;
   }
   if (!found.length) { if (Math.abs(video.currentTime - t0) > 0.01) await seek(t0); return { error: 'pick' }; }
@@ -790,6 +811,7 @@ function onResult(m) {
   if (m.type === 'netStatus') { window.__net = { ok: m.ok, ms: m.ms, error: m.error }; if (!m.ok) console.warn('Kugel-KI nicht verfügbar:', m.error); return; }
   if (m.type !== 'result') return;
   last = m;
+  if (m.startPins !== undefined) checkStartPins(m.startPins);   // nach Einrichten, Videostart oder Pause
   if (optCollect) { if (m.metrics) optCollect.samples.push(m.metrics); if (m.ms) optCollect.ms.push(m.ms); }
   if (m.state !== 'nocal') calibrated = true;
   if (window.__evlog) { const L = window.__evlog; L.n = (L.n || 0) + 1; if (L.st !== m.state || L.n % 15 === 0) L.push((video.currentTime || 0).toFixed(2) + ' ' + (L.st = m.state) + ' ok' + (m.ok ? 1 : 0) + ' q' + (m.quality || 0).toFixed(2) + ' akt' + (m.active || 0)); for (const ev of m.events || []) L.push((video.currentTime || 0).toFixed(2) + ' ev ' + ev.type + (ev.why ? ' ' + JSON.stringify({ why: ev.why, gap: ev.gap, y: ev.y, span: ev.span, vy: ev.vy, n: ev.n }) : '')); }
@@ -893,6 +915,7 @@ function updateHud() {
 function togglePause() {
   paused = !paused;
   proc?.setPaused(paused);
+  if (!paused) proc?.post({ type: 'checkPins' });   // nach der Pause kann jemand anderes weitergespielt haben
   const b = $('#b-run'); b.innerHTML = ''; b.append(icon(paused ? 'play' : 'pause')); b.classList.toggle('paused', paused);
   if (fileMode) { if (paused) video.pause(); else video.play().catch(() => { }); }
   setStatus(paused ? 'st.paused' : 'st.idle', paused ? '' : 'ok');
@@ -921,6 +944,23 @@ function pickFile() {
   inp.click();
 }
 let camCorners = null, fileShots = 0, fileShotList = [], fileEarly = false, savingShot = null;
+// Neues Video, Live-Start oder nach Pause: Stehen andere Pins, als das laufende Spiel erwartet (z. B. volles Dreieck, obwohl der
+// 2. Wurf dran wäre), ist es ein Neustart -> neues Spiel. Von hinten verdecken sich Pins paarweise; verglichen
+// wird deshalb je Bildspalte, und eine einzelne abweichende Spalte reicht nicht (Messfehler).
+async function checkStartPins(sp) {
+  if (!sp?.cols?.length) return;
+  const pos = currentPosition(), exp = pos.pinsBefore || [];
+  const det = sp.cols.map(c => c.up), want = sp.cols.map(c => c.ids.some(id => exp.includes(id)));
+  const full = det.every(Boolean), expFull = exp.length >= 10, diff = det.filter((v, i) => v !== want[i]).length;
+  // Nachbarspalten werden manchmal verwechselt (z. B. 6 und 3/9): bei Teil-Aufstellungen erst ab 3 abweichenden
+  // Spalten oder deutlich anderer Anzahl ein Neustart
+  const nDet = det.filter(Boolean).length, nWant = want.filter(Boolean).length;
+  const mismatch = (full && !expFull) || (!full && expFull && det.filter(v => !v).length >= 2) || (!full && !expFull && (diff >= 3 || Math.abs(nDet - nWant) >= 2));
+  if (!mismatch || (gameShots().length === 0 && full)) return;
+  await newGame();
+  if (full) syncPins(); else proc?.post({ type: 'pinsBefore', pins: sp.standing });
+  updateTop(); toast(t('file.newStart'));
+}
 async function openVideoUrl(url, q) {
   if (!fileMode) camCorners = corners.length === 4 ? corners.map(c => [...c]) : null;
   fileMode = true; fileStop = true; fileShots = 0; fileShotList = [];
@@ -1027,6 +1067,24 @@ function draw() {
     return;
   }
   if (mode === 'calib' || (mode === 'wizard' && wiz?.step === 2)) {
+    if (scanViz) {   // während „Auto“: was die Suche prüft, vom Scanner von oben nach unten eingeblendet
+      const k = Math.min(1, (performance.now() - scanViz.t0) / scanViz.dur), yS = k * 1.05;
+      c.fillStyle = 'rgba(16,185,129,.45)';
+      for (const [u, v] of scanViz.area) if (v <= yS) { const p = S2(u, v); c.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
+      c.lineWidth = 1;
+      for (const q of scanViz.probes) {
+        if (Math.min(q[1], q[3]) > yS) continue;
+        c.strokeStyle = q[4] ? 'rgba(16,185,129,.8)' : 'rgba(203,213,225,.55)';
+        const a = S2(q[0], q[1]), b = S2(q[2], q[3]); c.beginPath(); c.moveTo(...a); c.lineTo(...b); c.stroke();
+        if (q[4] && q[5] != null) { const h = S2(q[5], q[6]); c.fillStyle = '#34d399'; c.beginPath(); c.arc(h[0], h[1], 2, 0, 7); c.fill(); }
+      }
+      for (const [u, v, ok] of scanViz.gutter) if (v <= yS) { const p = S2(u, v); c.fillStyle = ok ? 'rgba(52,211,153,.95)' : 'rgba(248,113,113,.85)'; c.beginPath(); c.arc(p[0], p[1], 2.5, 0, 7); c.fill(); }
+      const ys = S2(0, Math.min(1, yS))[1]; c.strokeStyle = 'rgba(52,211,153,.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, ys); c.lineTo(R.sw, ys); c.stroke();
+    }
+    for (const q of scanQuads) {   // während „Auto“: bisher gefundene Bahnen dünn zeigen
+      c.strokeStyle = 'rgba(16,185,129,.75)'; c.lineWidth = 1.5;
+      c.beginPath(); [0, 1, 3, 2].forEach((i, k) => { const p = S2(...q[i]); k ? c.lineTo(...p) : c.moveTo(...p); }); c.closePath(); c.stroke();
+    }
     if (corners.length >= 2) {
       const order = [0, 1, 3, 2].filter(i => i < corners.length);
       c.strokeStyle = '#2f6fed'; c.lineWidth = 2; c.setLineDash([6, 4]);

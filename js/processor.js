@@ -17,6 +17,7 @@ class MainThreadEngine { // Ersatz, wenn der Browser keinen OffscreenCanvas im W
     if (m.type === 'options') { if (m.workW) this.workW = m.workW; e.setOptions(m.options); return null; }
     if (m.type === 'ballColor') { e.setBallColor(m.color); return null; }
     if (m.type === 'pinsBefore') { e.setPinsBefore(m.pins); return null; }
+    if (m.type === 'checkPins') { e.requestStartPins(); return null; }
     if (m.type === 'reset') { e.resetShot(); return null; }
     if (m.type === 'flush') return { type: 'flushed', events: e.flush(m.t) };
     if (m.type !== 'frame') return null;

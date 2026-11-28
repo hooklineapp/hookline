@@ -52,7 +52,7 @@ export async function mlCorners(frame, a) {
   // An Testvideos fängt das einen Teil der falschen Bahnen ab; Grenze 0,4 (Anteil der Stellen mit Helligkeitssprung).
   let gutter = 1;
   if (!a.target && (a.minGutter ?? 0.4) > 0) {
-    const ev = laneEvidence(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, r.corners);
+    const ev = laneEvidence(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, r.corners, undefined, a.viz ? (r.gutterPts = []) : undefined);
     gutter = ev ? Math.min(ev.gutterL, ev.gutterR) : 0;
   }
   r.gutter = +gutter.toFixed(2);
@@ -66,7 +66,9 @@ export async function mlCorners(frame, a) {
     const H = homography([[0, 0], [1, 0], [0, 18.288], [1, 18.288]], c);
     if (H) c = [c[0], c[1], apply(H, 0, yTop), apply(H, 1, yTop)];
   }
-  const sn = snapNormalized(toGray(frame.data, w, h), w, h, c, yTop);
+  const probes = a.viz ? [] : undefined;
+  const sn = snapNormalized(toGray(frame.data, w, h), w, h, c, yTop, probes);
+  if (probes) r.probes = probes;
   return { corners: sn.corners || c, ml: r, snapped: !!sn.corners };
 }
 
@@ -96,6 +98,9 @@ export async function findCorners(frame, a) {
       if (mv <= Math.max(4, 0.8 * topW)) { res.corners = t; res.horizon = +mv.toFixed(1); }
     }
   }
+  // Anzeige beim Suchen (nur auf Wunsch): Bahnfläche des Netzes, Prüfstriche des Einrastens, Rinnen-Prüfpunkte
+  if (a.viz && ml?.ml) res.viz = { area: ml.ml.areaPts || [], probes: ml.ml.probes || [], gutter: ml.ml.gutterPts || [] };
+  if (ml?.ml) { delete ml.ml.areaPts; delete ml.ml.probes; delete ml.ml.gutterPts; }
   if (ml && !ml.corners) res.mlFail = true;
   else if (ml?.corners) res.ordered = true;   // Modell liefert FoulL, FoulR, KopfL, KopfR schon richtig
   return res;

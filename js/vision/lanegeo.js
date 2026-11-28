@@ -7,7 +7,7 @@ function px(g, w, h, x, y) { x = Math.round(x); y = Math.round(y); return x >= 0
 
 // gray: Graustufen (w x h), corners: normiert [FoulL, FoulR, KopfL, KopfR]
 // Ergebnis: { gutterL, gutterR } = Anteil der Stellen entlang der Kante (25 Stück) mit deutlichem Unterschied Bahn | Rinne
-export function laneEvidence(gray, w, h, corners, yTop = HEADPIN_Y) {
+export function laneEvidence(gray, w, h, corners, yTop = HEADPIN_Y, trace) {
   const P = corners.map(([u, v]) => [u * w, v * h]);
   const H = homography([[0, 0], [LANE_W, 0], [0, yTop], [LANE_W, yTop]], P);
   if (!H) return null;
@@ -19,7 +19,8 @@ export function laneEvidence(gray, w, h, corners, yTop = HEADPIN_Y) {
       const inn = apply(H, X - dir * 0.12, Y), outG = apply(H, X + dir * GUTTER_W * 0.5, Y);
       const a = px(gray, w, h, inn[0], inn[1]), b = px(gray, w, h, outG[0], outG[1]);
       if (isNaN(a) || isNaN(b)) continue;
-      n++; if (Math.abs(a - b) > 18) gut++;
+      n++; const okG = Math.abs(a - b) > 18; if (okG) gut++;
+      trace?.push([outG[0] / w, outG[1] / h, okG ? 1 : 0]);
     }
     out['gutter' + side] = n ? gut / n : 0;
   }

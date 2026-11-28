@@ -65,7 +65,7 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
         const g = prof[i - 2][1] - prof[i + 2][1]; // innen hell -> außen dunkel = positiv
         if (g > best) { best = g; bt = i; }
       }
-      if (best < (opt.minContrast ?? 12) || bt < 3 || bt > prof.length - 4) continue;
+      if (best < (opt.minContrast ?? 12) || bt < 3 || bt > prof.length - 4) { opt.trace?.push([p[0] - dx * r, p[1] - dy * r, p[0] + dx * r, p[1] + dy * r, 0]); continue; }
       // Subpixel: Parabel durch die Gradienten um das Maximum
       const gAt = (i) => prof[i - 2][1] - prof[i + 2][1];
       const g0 = gAt(bt - 1), g1 = gAt(bt), g2 = gAt(bt + 1);
@@ -73,6 +73,7 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
       const off = Math.abs(den) > 1e-6 ? 0.5 * (g0 - g2) / den : 0;
       const t = prof[bt][0] + Math.max(-1, Math.min(1, off)) * 0.25;
       pts.push([p[0] + dx * t, p[1] + dy * t]);
+      opt.trace?.push([p[0] - dx * r, p[1] - dy * r, p[0] + dx * r, p[1] + dy * r, 1, p[0] + dx * t, p[1] + dy * t]);
     }
     // unsichere Kante: getippte Linie behalten (statt alles zu verwerfen)
     const st = opt.strict !== false;
@@ -94,7 +95,9 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
       if (isNaN(v)) continue; sum += v; n++;
       if (v < lo) { lo = v; lt = t; }
     }
-    if (n && sum / n - lo > (opt.minContrast ?? 12) * 1.5) fp.push([p[0] + dx * lt, p[1] + dy * lt]);
+    const hitF = n && sum / n - lo > (opt.minContrast ?? 12) * 1.5;
+    if (hitF) fp.push([p[0] + dx * lt, p[1] + dy * lt]);
+    opt.trace?.push([p[0] - dx * r, p[1] - dy * r, p[0] + dx * r, p[1] + dy * r, hitF ? 1 : 0, p[0] + dx * lt, p[1] + dy * lt]);
   }
   let foulOk = false;
   if (fp.length >= 8) { const L = fitLine(fp); if (L && L.rms < 1.0 && L.n >= 6) { foul = L; foulOk = true; } }
@@ -114,13 +117,17 @@ export function snapCorners(gray, w, h, img, yTop, opt = {}) {
 
 // Grob gesetzte Ecken (normalisiert, Reihenfolge FoulL, FoulR, ObenL, ObenR) auf die Bahnkanten ziehen.
 // Zwei Durchgänge, damit auch etwas weiter daneben gesetzte Punkte gefunden werden. Ergebnis normalisiert.
-export function snapNormalized(gray, w, h, corners, yTop) {
+// trace (optional, Array): Prüfstriche des ersten Durchgangs für die Anzeige, normiert [x1,y1,x2,y2,treffer,hx,hy]
+export function snapNormalized(gray, w, h, corners, yTop, trace) {
   const img0 = corners.map(([x, y]) => [x * w - 0.5, y * h - 0.5]);
+  let first = !!trace;
   const once = (start) => {
     let img = start, ok = false;
     for (let pass = 0; pass < 3; pass++) {
       // erst breit suchen (grob gesetzt), dann eng verfeinern
-      const r = snapCorners(gray, w, h, img, yTop, { strict: false, maxMove: Math.max(10, 0.06 * w), searchM: pass === 0 ? 0.2 : 0.08, foulM: pass === 0 ? 0.5 : 0.15 });
+      const tr = first && pass === 0 ? [] : null;
+      const r = snapCorners(gray, w, h, img, yTop, { strict: false, maxMove: Math.max(10, 0.06 * w), searchM: pass === 0 ? 0.2 : 0.08, foulM: pass === 0 ? 0.5 : 0.15, trace: tr });
+      if (tr) { first = false; for (const q of tr) trace.push([(q[0] + 0.5) / w, (q[1] + 0.5) / h, (q[2] + 0.5) / w, (q[3] + 0.5) / h, q[4], q[5] != null ? (q[5] + 0.5) / w : null, q[6] != null ? (q[6] + 0.5) / h : null]); }
       if (!r) { if (pass === 0) continue; break; }
       const moved = Math.max(...r.corners.map((p, i) => Math.hypot(p[0] - img[i][0], p[1] - img[i][1])));
       img = r.corners; ok = true;

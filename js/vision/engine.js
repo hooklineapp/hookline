@@ -26,6 +26,7 @@ export const ENGINE_DEFAULTS = {
   sweepGuard: false, pinEarly: 0.5, sweepY: 17.9, sweepZ: [0.4, 0.44, 0.48], sweepCols: 20, sweepDiff: 35, sweepThr: 0.6, sweepHold: 0, sweepArm: 0.4, sweepCalmDur: 0.1, debugSweep: false,
   // Handy-Robustheit: Belichtungsausgleich, Verankerung am Referenzbild (jedes n-te Bild);
   // Nachbarschaftsvergleich (nbPx) und weiche Kugelfarbe im Lauf sind aus, weil sie saubere Aufnahmen verschlechtern
+  startPins: true, startPinsFrame: 8,   // stehende Pins kurz nach dem Einrichten melden (8. ausgewertetes Bild)
   gainComp: true, refAnchor: true, refAnchorEvery: 2, nbPx: 0, nbMax: 4, colorSoft: false,
   colorClusters: true, colorSampleBall: true, clusterTolC: 12, clusterTolY: 36,
   motionFallback: false, motionSeedSize: 0.8, motionSeedExtra: 4,   // Wurfstart über Bewegung, wenn die Kugelfarbe nicht passt   // Kugelfarbe: bis 3 Farbgruppen, Probe über die ganze Kugel
@@ -77,6 +78,8 @@ export class Engine {
     if (this.ref && (o.features !== undefined || o.lkRadius !== undefined || o.lkLevels !== undefined)) this._needRecal = true;
   }
   setBallColor(c) { this.ballColor = c; }
+  // nach Pause/Neustart erneut melden, welche Pins stehen (in ein paar Bildern, sobald Ruhe ist)
+  requestStartPins() { this._spAt = this.frameN + (this.o.startPinsFrame || 8); }
   setPinsBefore(list) { this.pinsBefore = list && list.length ? [...list] : [...PIN_IDS]; }
   resetShot() {
     this.state = this.ref ? 'idle' : 'nocal';
@@ -118,7 +121,7 @@ export class Engine {
     this.f = cameraFromH(Href, w, h, fFov || undefined).f;
     this.grid = null; this.lost = 0; this.quality = 1; this._needRecal = false;
     this.pinRef = null; this.pinRefCand = null;
-    this.frameN = 0;
+    this.frameN = 0; this._spAt = this.o.startPinsFrame || 8;   // nach dem Einrichten einmal stehende Pins melden
     this.resetShot();
     return { features: pts.length, f: this.f / w, snapped, corners: this.ref.corners };
   }
@@ -954,6 +957,24 @@ export class Engine {
   // Von hinten gefilmt decken sich vorderer und hinterer Pin einer Spalte (2/8, 1/5, 3/9) vollständig – dort ist
   // nur „Spalte steht“ messbar; welcher bzw. ob beide stehen, legt pinPair fest ('back' = einer, der hintere).
   // Kopfzählung nur, wenn die Köpfe groß genug und ganz im Pinbild liegen
+  // Welche Pins stehen gerade (im Ruhezustand, vor einem Wurf)? Kopfzählung auf dem letzten Pin-Ausschnitt,
+  // unabhängig von den erwarteten Pins. Von hinten verdecken sich Pins paarweise (1/5, 2/8, 3/9): Ergebnis daher je
+  // Bildspalte. Rückgabe { cols: [{ ids, up }], standing } oder null (Köpfe zu klein/angeschnitten, keine Messung).
+  standingNow(align = true) {
+    const c = this.pinRefCand; if (!c || !c.geo) return null;
+    const keep = { b: this.pinsBefore, m: this.pinMeas, r: this.pinRef, a: this.pinAl };
+    try {
+      this.pinsBefore = [...PIN_IDS];
+      const m = { ...c };
+      if (align) { this._alignPins(m); }
+      this.pinMeas = [m]; this.pinRef = null;
+      if (!this._headsUsable()) return null;
+      const { standing, detail } = this._decidePinsHeads();
+      const cols = [];
+      for (const id of PIN_IDS) { const d = detail[id]; (cols[d.col] ||= { ids: [], up: false }).ids.push(id); if (d.votes * 2 > 1) cols[d.col].up = true; }
+      return { cols: cols.filter(Boolean), standing };
+    } finally { this.pinsBefore = keep.b; this.pinMeas = keep.m; this.pinRef = keep.r; this.pinAl = keep.a; }
+  }
   _headsUsable() {
     const m = this.pinMeas[0], ids = PIN_IDS.filter(p => this.pinsBefore.includes(p));
     if (!m || !ids.length) return false;
@@ -1247,6 +1268,11 @@ export class Engine {
       trail: this.state === 'roll' ? this.itrack.slice(-60).map(p => [p[1], p[2]]) : null,
       events: ev,
     };
+    // Kurz nach dem Einrichten einmal melden, welche Pins vor dem ersten Wurf stehen (z. B. neues Video, das nicht
+    // zum letzten passt). Nur in Ruhe: ein laufender Wurf verdeckt die Pins nicht, verändert sie aber.
+    // Läuft schon ein Wurf, entfällt die Meldung (danach räumt die Maschine ab, das würde falsch verglichen)
+    if (this.state !== 'idle') this._spAt = null;
+    else if (o.startPins && this._spAt != null && this.frameN >= this._spAt) { res.startPins = this.standingNow(); this._spAt = null; }
     if (o.debug && this.grid && this.frameN % 3 === 0) {
       const g = this.grid; const m = new Uint8Array(g.n);
       for (let k = 0; k < g.n; k++) m[k] = !g.valid[k] ? 0 : g.fg[k] ? (g.col[k] ? 3 : 2) : 1;

@@ -152,7 +152,9 @@ export function runLaneNet(frame) {
     }
     corners.push([su / sw / OUT, sv / sw / OUT]);    // Heatmap-Pixel j -> Eingangs-Koordinate j*4 -> normiert /256
   }
-  return { corners, conf, area: area / n, iou: corners.every(Boolean) ? quadIoU(out.d, corners) : 0 };
+  // für die Anzeige beim Suchen: Zellen, die das Netz für Bahnfläche hält (normiert)
+  const areaPts = []; for (let i = 0; i < OUT; i++) for (let j = 0; j < OUT; j++) if (out.d[i * OUT + j] > 0) areaPts.push([(j + 0.5) / OUT, (i + 0.5) / OUT]);
+  return { corners, conf, area: area / n, iou: corners.every(Boolean) ? quadIoU(out.d, corners) : 0, areaPts };
 }
 
 // Gegencheck: wie gut deckt das Ecken-Viereck die erkannte Bahnfläche (beide unabhängig vorhergesagt)
