@@ -24,7 +24,7 @@ let corners = [], handles = [], calibrated = false, last = null, lastShot = null
 let fileMode = false, fileStop = false, paused = false, wake = null, drawPending = false;
 let quietUntil = 0, calPos = null;   // calPos: frei gezogene Höhe des Ecken-Menüs (px)   // kurz nach dem Kamerastart keine Signale (Fehlstarts beim Einpendeln)
 let fileStart = 0;   // Video: Auswertung ab dem Bild, auf dem die Ecken geprüft wurden
-let scan = null, scanQuads = [], scanViz = null, vizOn = false;   // vizOn: Scanner-Anzeige während „Auto“   // Lade-Anzeige bei „Auto“: Suchbalken, Text, schon gefundene Vierecke
+let scan = null, scanQuads = [], scanViz = null, vizOn = false, scanAnim = null, scanPost = null;   // vizOn: Scanner-Anzeige während „Auto“   // Lade-Anzeige bei „Auto“: Suchbalken, Text, schon gefundene Vierecke
 let freezeBmp = null, pendingFps = 0, calBackup = null, pickLane = false, dock, calPanel, calTop = true, calSideManual = false;
 let optCollect = null, welcomeOpen = false;
 let lastCal = null, laneKeep = false;   // letzte Einrichtung (Referenzbild + Ecken) für Bahn-Profile
@@ -40,7 +40,7 @@ export function initLive(el) {
   debugCv = h('canvas.debugcv', { style: { display: 'none' } });
   hint = h('div.empty-hint', null, h('div', null, t('st.starting')));
   progress = h('div.progress', { style: { transform: 'scaleX(0)' } });
-  scan = h('div.autoscan', { style: { display: 'none' } }, h('div.autoscan-bar'), h('div.autoscan-label'));
+  scan = h('div.autoscan', { style: { display: 'none' } }, h('div.autoscan-bar'), h('div.autoscan-label'), h('div.autoscan-badge'));
   stage = h('div.stage', null, video, freeze, ov, hint, loupe, debugCv, progress, scan);
   statusPill = h('span.chip.status', null, h('i.dot'), h('span', null, ''));
   framePill = h('button.chip.game', { onclick: showGame }, '');
@@ -271,17 +271,37 @@ async function runSnap() {
 }
 // Lagesensor beim ersten Antippen einschalten (iOS fragt dafür einmal nach der Erlaubnis)
 if (typeof document !== 'undefined') document.addEventListener('pointerdown', () => { startTilt(); }, { once: true, capture: true });
-function scanShow(text) { scanQuads = []; scan.querySelector('.autoscan-label').textContent = text; scan.style.display = ''; requestDraw(); }
+// Anzeige bei „Auto“ (nichts wird abgedunkelt):
+// - solange gerechnet wird: feine, erfundene Tastarme greifen von allen Bildschirmrändern ins Bild und tasten
+//   Punkte ab (bekannte Punkte aus schon geprüften Bildern, sonst Stellen im Bild)
+// - sobald das Ergebnis da ist: sofort Ende der Animation, Punkte (mit Tiefe) und Bahn erscheinen direkt, der Umriss
+//   blitzt kurz auf und alles verblasst von selbst – ohne die Erkennung aufzuhalten
+function scanShow(text) {
+  scanQuads = []; scanPost = null;
+  scan.querySelector('.autoscan-label').textContent = text; scan.style.display = '';
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  scanAnim = { t0: performance.now(), arms: [], pts: [], rnd, next: 0 };
+  const loop = () => { if (!scanAnim) return; requestDraw(); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
 function scanText(text) { scan.querySelector('.autoscan-label').textContent = text; }
-function scanHide() { scan.style.display = 'none'; scan.classList.remove('viz'); scanQuads = []; scanViz = null; requestDraw(); }
-// Prüfdaten der Suche zeigen: ein Scanner läuft von oben nach unten und blendet ein, was er „sieht“
-// (Bahnfläche des Netzes als Punkte, Prüfstriche des Einrastens, Rinnen-Prüfpunkte). dur in ms.
-function playViz(viz, dur = 900) {
-  if (!viz) return Promise.resolve();
-  scanViz = { ...viz, t0: performance.now(), dur }; scan.classList.add('viz');
-  const tick = () => { if (!scanViz) return; requestDraw(); if (performance.now() - scanViz.t0 < scanViz.dur + 400) requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
-  return new Promise(r => setTimeout(r, dur + 350));
+function scanHide() { scan.style.display = 'none'; scan.querySelector('.autoscan-badge')?.classList.remove('on'); scanQuads = []; scanAnim = null; requestDraw(); }
+// gefundene Punkte eines geprüften Bildes: als Ziele für die Tastarme merken
+function scanKnow(viz) { if (scanAnim && viz) scanAnim.pts = [...(viz.area || []).filter((_, i) => i % 3 === 0), ...(viz.probes || []).filter(q => q[4] && q[5] != null).map(q => [q[5], q[6]])].slice(0, 400); }
+// Ergebnis sofort zeigen; die Punkte verblassen danach selbstständig
+function showPost(viz, corners) {
+  if (!viz) return;
+  const area = viz.area || [], step = Math.max(1, Math.round(area.length / 160));
+  scanPost = { t0: performance.now(), area: area.filter((_, i) => i % step === 0), hits: (viz.probes || []).filter(q => q[4] && q[5] != null).map(q => [q[5], q[6]]), gutter: viz.gutter || [], corners };
+  const loop = () => { if (!scanPost) return; requestDraw(); if (performance.now() - scanPost.t0 < 1600) requestAnimationFrame(loop); else { scanPost = null; requestDraw(); } };
+  requestAnimationFrame(loop);
+  if (corners) {
+    const b = scan.querySelector('.autoscan-badge'); b.textContent = t('cal.found');
+    const p = toScreen((corners[2][0] + corners[3][0]) / 2, Math.min(corners[2][1], corners[3][1]), viewRect());
+    b.style.left = p[0] + 'px'; b.style.top = Math.max(8, p[1] - 44) + 'px';
+    scan.style.display = ''; scan.classList.add('post'); b.classList.add('on');
+    setTimeout(() => { b.classList.remove('on'); setTimeout(() => { if (!scanAnim) { scan.style.display = 'none'; scan.classList.remove('post'); } }, 260); }, 1400);
+  }
 }
 async function runAuto(target) {
   startTilt();
@@ -291,9 +311,9 @@ async function runAuto(target) {
   if (vizOn) scanShow(t('cal.scan'));
   // Video: mehrere Bilder der ersten Sekunden prüfen (der Spieler verdeckt anfangs oft Foul-Linie und Anlauf)
   const r = fileMode && !target && video.duration > 1 ? await autoMulti() : await autoOne(target);
-  if (vizOn && r?.viz && !(fileMode && !target)) await playViz(r.viz);
   calPanel.classList.remove('busy');
   scanHide();
+  if (vizOn && r?.viz) showPost(r.viz, r.corners ? (r.ordered ? r.corners : orderCorners(r.corners)) : null);
   if (!r) return;
   pickLane = false;
   if (r.t != null) { fileStart = r.t; if (freezeBmp) { unfreeze(); await doFreeze(); } }
@@ -323,7 +343,7 @@ async function autoMulti() {
     const bmp = await grabFrame();
     if (vizOn) scanText(t('cal.scanN', { i: i + 1, n: 13 }));
     const r = bmp && await proc.request(bmp, { auto: { yTop: topLineY(S.get('topLine')), viz: vizOn } });
-    if (vizOn && r?.viz) playViz(r.viz, 450);
+    if (vizOn && r?.viz) scanKnow(r.viz);
     if (r?.corners) { found.push({ t: tt, r, c: r.ordered ? r.corners : orderCorners(r.corners) }); if (vizOn) { scanQuads.push(found[found.length - 1].c); requestDraw(); } }
     if (tt >= video.duration - 0.1) break;
   }
@@ -1066,6 +1086,79 @@ async function closeFile(restartCam = true) {
 }
 
 // ---------- Overlay ----------
+// Zeichnen der Scan-Anzeige (additives Licht, nichts wird abgedunkelt)
+const CY = '0,240,255', VI = '167,139,250';
+// Wartezeit: Tastarme (gerade Striche) greifen von allen Bildschirmrändern ins Bild. Jeder Arm hat einen festen Ansatz am Rand,
+// seine Spitze saust zu einem Ziel, dockt kurz an (kleiner Ring) und fährt dann meist in der Nähe hin und her,
+// manchmal quer über den Bildschirm. Ziele: schon gefundene Punkte (bei Videos aus früheren Bildern), sonst
+// Stellen im Bild. Keine durchlaufende Scanlinie.
+function drawScanWait(c, S2, R) {
+  const A = scanAnim, now = performance.now();
+  const ease = (k) => k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  const pick = (near) => {
+    const pts = A.pts;
+    if (pts.length) {
+      const cand = near ? pts.filter(p => Math.hypot(p[0] - near[0], p[1] - near[1]) < 0.18) : pts;
+      const L = cand.length ? cand : pts; return L[Math.floor(A.rnd() * L.length)];
+    }
+    if (near) return [Math.min(0.95, Math.max(0.05, near[0] + (A.rnd() - 0.5) * 0.3)), Math.min(0.95, Math.max(0.05, near[1] + (A.rnd() - 0.5) * 0.2))];
+    return [0.15 + A.rnd() * 0.7, 0.25 + A.rnd() * 0.6];
+  };
+  if (!A.arms.length) {   // 6 Arme: je einer oben, unten, und zwei an jeder Seite
+    for (const [sx, sy] of [[0.3, -0.02], [0.75, 1.02], [-0.02, 0.35], [-0.02, 0.8], [1.02, 0.25], [1.02, 0.65]]) {
+      const ax = sx + (sx > 0 && sx < 1 ? (A.rnd() - 0.5) * 0.3 : 0), ay = sy + (sy > 0 && sy < 1 ? (A.rnd() - 0.5) * 0.2 : 0);
+      A.arms.push({ ax, ay, fx: ax, fy: ay, tx: 0, ty: 0, t0: now + A.rnd() * 350, dur: 0, dock: 0, first: true });
+    }
+  }
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const a of A.arms) {
+    if (now < a.t0) continue;
+    if (a.first || now > a.t0 + a.dur + a.dock) {   // nächstes Ziel
+      const cur = a.first ? null : [a.tx, a.ty];
+      const far = a.first || A.rnd() < 0.3;
+      const [tx, ty] = pick(far ? null : cur);
+      if (!a.first) { a.fx = a.tx; a.fy = a.ty; }
+      a.tx = tx; a.ty = ty; a.t0 = now; a.first = false;
+      const d = Math.hypot(a.tx - a.fx, a.ty - a.fy);
+      a.dur = 180 + d * 900; a.dock = 120 + A.rnd() * 260;
+    }
+    const k = Math.min(1, (now - a.t0) / a.dur), e = ease(k);
+    const x = a.fx + (a.tx - a.fx) * e, y = a.fy + (a.ty - a.fy) * e;
+    // Arm: gerader Strich vom Randansatz zur Spitze
+    const P0 = S2(a.ax, a.ay), P2 = S2(x, y);
+    const grad = c.createLinearGradient(P0[0], P0[1], P2[0], P2[1]);
+    grad.addColorStop(0, `rgba(${VI},0.05)`); grad.addColorStop(1, `rgba(${CY},0.65)`);
+    c.strokeStyle = grad; c.lineWidth = 1; c.beginPath(); c.moveTo(...P0); c.lineTo(...P2); c.stroke();
+    // Spitze; beim Andocken ein kleiner Ring
+    const docked = k >= 1, dk = docked ? Math.min(1, (now - a.t0 - a.dur) / a.dock) : 0;
+    c.shadowColor = `rgb(${CY})`; c.shadowBlur = docked ? 10 : 4;
+    c.fillStyle = docked ? 'rgba(255,255,255,0.95)' : `rgba(${CY},0.9)`; c.beginPath(); c.arc(P2[0], P2[1], docked ? 2.4 : 1.6, 0, 7); c.fill();
+    c.shadowBlur = 0;
+    if (docked) { c.strokeStyle = `rgba(${CY},${0.7 * (1 - dk)})`; c.lineWidth = 1; c.beginPath(); c.arc(P2[0], P2[1], 4 + dk * 9, 0, 7); c.stroke(); }
+  }
+  // bereits gefundene Punkte (Videos) dezent zeigen, damit man sieht, woran die Arme tasten
+  for (const p of A.pts) { const q = S2(p[0], p[1]); c.fillStyle = `rgba(${CY},0.28)`; c.beginPath(); c.arc(q[0], q[1], 1, 0, 7); c.fill(); }
+  c.restore();
+}
+function drawScanPost(c, S2) {
+  const V = scanPost, el = performance.now() - V.t0, a = el < 900 ? 1 : Math.max(0, 1 - (el - 900) / 700);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const [u, v] of V.area) {   // Punkte mit Tiefe: vorn groß/hell, hinten klein/blass
+    const depth = Math.max(0, Math.min(1, (v - 0.25) / 0.6)), p = S2(u, v);
+    c.fillStyle = `rgba(${CY},${(0.22 + 0.4 * depth) * a})`; c.beginPath(); c.arc(p[0], p[1], 0.6 + 1.2 * depth, 0, 7); c.fill();
+  }
+  c.shadowColor = `rgb(${CY})`; c.shadowBlur = 6;
+  for (const [x, y] of V.hits) { const p = S2(x, y); c.fillStyle = `rgba(255,255,255,${0.85 * a})`; c.beginPath(); c.arc(p[0], p[1], 1.7, 0, 7); c.fill(); }
+  c.shadowBlur = 0; c.lineWidth = 1;
+  for (const [u, v, ok] of V.gutter) { const p = S2(u, v); c.strokeStyle = ok ? `rgba(${CY},${0.7 * a})` : `rgba(${VI},${0.5 * a})`; c.beginPath(); c.arc(p[0], p[1], 2.5, 0, 7); c.stroke(); }
+  if (V.corners) {   // Umriss blitzt auf
+    const fl = el < 120 ? el / 120 : Math.max(0, 1 - (el - 120) / 900);
+    const P = V.corners.map(q => S2(...q));
+    c.shadowColor = `rgb(${CY})`; c.shadowBlur = 16; c.lineWidth = 2; c.strokeStyle = `rgba(230,254,255,${fl})`;
+    c.beginPath(); [0, 1, 3, 2].forEach((i, n) => n ? c.lineTo(...P[i]) : c.moveTo(...P[i])); c.closePath(); c.stroke(); c.shadowBlur = 0;
+  }
+  c.restore();
+}
 function requestDraw() {
   if (drawPending) return;
   drawPending = true;
@@ -1087,20 +1180,8 @@ function draw() {
     return;
   }
   if (mode === 'calib' || (mode === 'wizard' && wiz?.step === 2)) {
-    if (scanViz) {   // während „Auto“: was die Suche prüft, vom Scanner von oben nach unten eingeblendet
-      const k = Math.min(1, (performance.now() - scanViz.t0) / scanViz.dur), yS = k * 1.05;
-      c.fillStyle = 'rgba(16,185,129,.45)';
-      for (const [u, v] of scanViz.area) if (v <= yS) { const p = S2(u, v); c.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
-      c.lineWidth = 1;
-      for (const q of scanViz.probes) {
-        if (Math.min(q[1], q[3]) > yS) continue;
-        c.strokeStyle = q[4] ? 'rgba(16,185,129,.8)' : 'rgba(203,213,225,.55)';
-        const a = S2(q[0], q[1]), b = S2(q[2], q[3]); c.beginPath(); c.moveTo(...a); c.lineTo(...b); c.stroke();
-        if (q[4] && q[5] != null) { const h = S2(q[5], q[6]); c.fillStyle = '#34d399'; c.beginPath(); c.arc(h[0], h[1], 2, 0, 7); c.fill(); }
-      }
-      for (const [u, v, ok] of scanViz.gutter) if (v <= yS) { const p = S2(u, v); c.fillStyle = ok ? 'rgba(52,211,153,.95)' : 'rgba(248,113,113,.85)'; c.beginPath(); c.arc(p[0], p[1], 2.5, 0, 7); c.fill(); }
-      const ys = S2(0, Math.min(1, yS))[1]; c.strokeStyle = 'rgba(52,211,153,.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, ys); c.lineTo(R.sw, ys); c.stroke();
-    }
+    if (scanPost) drawScanPost(c, S2);
+    if (scanAnim) drawScanWait(c, S2, R);
     for (const q of scanQuads) {   // während „Auto“: bisher gefundene Bahnen dünn zeigen
       c.strokeStyle = 'rgba(16,185,129,.75)'; c.lineWidth = 1.5;
       c.beginPath(); [0, 1, 3, 2].forEach((i, k) => { const p = S2(...q[i]); k ? c.lineTo(...p) : c.moveTo(...p); }); c.closePath(); c.stroke();
