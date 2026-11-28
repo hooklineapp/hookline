@@ -4,6 +4,7 @@ import { autoLane } from './autolane.js';
 import { snapCorners, snapNormalized } from './snap.js';
 import { toGray } from './lk.js';
 import { loadLaneNet, runLaneNet } from './lanenet.js';
+import { laneEvidence } from './lanegeo.js';
 import { homography, apply } from './geometry.js';
 
 // Gegencheck: konvexes Viereck, Foul-Linie vorn (unten), Bahn hinten schmaler als vorn, nicht winzig
@@ -47,7 +48,15 @@ export async function mlCorners(frame, a) {
   try { const u = new URL('./lanenet.bin', import.meta.url); u.search = new URL(import.meta.url).search; await loadLaneNet(u.href); } catch { return null; }
   const r = runLaneNet(frame);
   if (r.corners.some(c => !c) || r.area < 0.002 || !plausible(r.corners, frame.width, frame.height)) return { ml: r };
-  const sure = r.iou >= 0.35 && Math.min(...r.conf) >= 0.6;
+  // Bild-Beleg: neben beiden Seitenkanten muss eine Rinne zu sehen sein (Anlauf/Nachbarfläche hat keine).
+  // An Testvideos fängt das einen Teil der falschen Bahnen ab; Grenze 0,4 (Anteil der Stellen mit Helligkeitssprung).
+  let gutter = 1;
+  if (!a.target && (a.minGutter ?? 0.4) > 0) {
+    const ev = laneEvidence(toGray(frame.data, frame.width, frame.height), frame.width, frame.height, r.corners);
+    gutter = ev ? Math.min(ev.gutterL, ev.gutterR) : 0;
+  }
+  r.gutter = +gutter.toFixed(2);
+  const sure = r.iou >= (a.minIou ?? 0.35) && Math.min(...r.conf) >= (a.minConf ?? 0.6) && gutter >= (a.minGutter ?? 0.4);
   const confirmed = a.target && r.iou >= 0.15 && tapInLane(r.corners, a.target, frame.width, frame.height);
   if (a.target ? !confirmed : !sure) return { ml: r };
   const { width: w, height: h } = frame;
