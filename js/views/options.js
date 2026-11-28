@@ -20,7 +20,7 @@ function keepOpen(d, key, def) {
 }
 
 let afterUpdate = null;   // gerade aktualisiert: Bereich „Über“ offen lassen und an die alte Stelle scrollen
-try { afterUpdate = JSON.parse(sessionStorage.getItem('bt.afterUpdate') || 'null'); sessionStorage.removeItem('bt.afterUpdate'); } catch { /* */ }
+try { afterUpdate = JSON.parse(sessionStorage.getItem('bt.afterUpdate') || 'null'); sessionStorage.removeItem('bt.afterUpdate'); if (afterUpdate) afterUpdate.until = Date.now() + 5000; } catch { /* */ }
 export async function showOptions(keepLook) {
   if (!keepLook) lookOpen = false;
   const keepY = keepLook ? root.scrollTop : 0;
@@ -39,9 +39,12 @@ export async function showOptions(keepLook) {
   root.append(aboutCard());
   root.append(lookCard());
   if (keepY) root.scrollTop = keepY;
-  if (afterUpdate) {
-    const a = afterUpdate; afterUpdate = null;
-    requestAnimationFrame(() => { if (a.y) root.scrollTop = a.y; if (a.wy) window.scrollTo(0, a.wy); });
+  // nach einem Update: zum Bereich „Info“ scrollen (er enthält die Versionsnummer). Die Ansicht wird beim Start
+  // evtl. mehrfach neu aufgebaut, darum ein paar Sekunden lang nach jedem Aufbau wiederholen.
+  if (afterUpdate && Date.now() < afterUpdate.until) {
+    const el = root.querySelector('details.grp.about');
+    const go = () => el?.isConnected && el.scrollIntoView({ block: 'center' });
+    requestAnimationFrame(go); setTimeout(go, 300); setTimeout(go, 1000);
   }
 }
 
@@ -169,7 +172,7 @@ function aboutCard() {
   } }, t('u.check'));
   const hasUpd = document.querySelector('#tabs [data-tab="options"]')?.classList.contains('has-update');
   if (afterUpdate) opened.about = true;
-  return keepOpen(h('details.grp', null, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
+  return keepOpen(h('details.grp.about', null, h('summary', null, t('o.about'), hasUpd ? h('span.upd-dot') : null),
     h('div.opt', null, h('span', null, t('u.title'), h('br'), status), btn),
     h('div.opt', null, h('span', null, t('o.install')), h('span')),
     h('div.opt', null, h('div.hint', null, t('o.installHint'))),
