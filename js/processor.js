@@ -196,7 +196,7 @@ export class Processor {
     this.source = 'file:' + mode;
     video.pause(); video.muted = true;
     if (video.currentTime > 0.01) { await new Promise(r => { video.addEventListener('seeked', r, { once: true }); video.currentTime = 0; }); }
-    let rate = 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0;
+    let rate = 0.5, busy = false, pending = null, done = false, seen = 0, dropped = 0, lastAdapt = performance.now(), lastT = 0, procN = 0;
     video.playbackRate = rate;
     await new Promise((resolve) => {
       const finish = () => {
@@ -208,7 +208,7 @@ export class Processor {
       const run = async (bmp, t) => {
         busy = true;
         const res = await this.request(bmp, { t });
-        this._cnt.cam++; this._cnt.proc++; this._cnt.ms += res.ms || 0;
+        this._cnt.cam++; this._cnt.proc++; this._cnt.ms += res.ms || 0; procN++;
         this.onResult(res);
         onProgress?.(t / 1000, dur);
         busy = false;
@@ -224,13 +224,16 @@ export class Processor {
         let bmp;
         try { bmp = await createImageBitmap(video); } catch { schedule(); return; }
         if (busy) { if (pending) { pending.bmp.close?.(); dropped++; } pending = { bmp, t }; } else run(bmp, t);
-        // Geschwindigkeit anpassen: Bilder ausgelassen -> langsamer, sonst etwas schneller (max. Echtzeit)
+        // Geschwindigkeit an das gemessene Auswertungstempo anpassen (ausgewertete Bilder je Sekunde / Bilder je
+        // Sekunde des Videos, mit Reserve) und nur sanft ändern: kein ständiges Schneller/Langsamer (wirkte ruckelig)
         const nowMs = performance.now();
-        if (nowMs - lastAdapt > 700) {
-          const r0 = rate;
-          if (dropped > 0) rate = Math.max(0.07, rate * 0.7); else rate = Math.min(1, rate * 1.1);
-          if (rate !== r0) video.playbackRate = rate;
-          dropped = 0; lastAdapt = nowMs;
+        if (nowMs - lastAdapt > 1000) {
+          const procFps = procN * 1000 / (nowMs - lastAdapt), vFps = fps || 30;
+          let target = Math.max(0.07, Math.min(1, 0.85 * procFps / vFps));
+          if (dropped > 0) target = Math.min(target, rate * 0.85);       // es staut sich: sicher langsamer
+          const next = rate + 0.5 * (target - rate);
+          if (Math.abs(next - rate) / rate > 0.06) { rate = next; video.playbackRate = rate; }
+          dropped = 0; procN = 0; lastAdapt = nowMs;
         }
         schedule();
       };
