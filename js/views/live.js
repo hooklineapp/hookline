@@ -1105,7 +1105,8 @@ function drawScanWait(c, S2, R) {
     return [0.15 + A.rnd() * 0.7, 0.25 + A.rnd() * 0.6];
   };
   if (!A.arms.length) {   // 6 Arme: je einer oben, unten, und zwei an jeder Seite
-    for (const [sx, sy] of [[0.3, -0.02], [0.75, 1.02], [-0.02, 0.35], [-0.02, 0.8], [1.02, 0.25], [1.02, 0.65]]) {
+    // Ansätze weit außerhalb des Bildes: die Striche laufen von ganz außen über den Bildschirmrand herein
+    for (const [sx, sy] of [[0.3, -0.35], [0.75, 1.35], [-0.6, 0.35], [-0.6, 0.8], [1.6, 0.25], [1.6, 0.65]]) {
       const ax = sx + (sx > 0 && sx < 1 ? (A.rnd() - 0.5) * 0.3 : 0), ay = sy + (sy > 0 && sy < 1 ? (A.rnd() - 0.5) * 0.2 : 0);
       A.arms.push({ ax, ay, fx: ax, fy: ay, tx: 0, ty: 0, t0: now + A.rnd() * 350, dur: 0, dock: 0, first: true });
     }
@@ -1120,7 +1121,7 @@ function drawScanWait(c, S2, R) {
       if (!a.first) { a.fx = a.tx; a.fy = a.ty; }
       a.tx = tx; a.ty = ty; a.t0 = now; a.first = false;
       const d = Math.hypot(a.tx - a.fx, a.ty - a.fy);
-      a.dur = 180 + d * 900; a.dock = 120 + A.rnd() * 260;
+      a.dur = 180 + Math.min(d, 0.5) * 900; a.dock = 120 + A.rnd() * 260;   // auch von weit außen schnell im Bild
     }
     const k = Math.min(1, (now - a.t0) / a.dur), e = ease(k);
     const x = a.fx + (a.tx - a.fx) * e, y = a.fy + (a.ty - a.fy) * e;
